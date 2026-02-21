@@ -5,6 +5,7 @@ pub enum Tile {
     Wall,
     Floor,
     Stairs,
+    Potion,
 }
 
 pub struct Map {
@@ -44,7 +45,7 @@ impl Map {
     pub fn new(width: usize, height: usize) -> Self {
         let mut tiles = vec![vec![Tile::Wall; height]; width];
         let mut rooms: Vec<Rect> = Vec::new();
-        
+
         // Scale rooms based on map size
         let max_rooms = (width * height) / 150;
         let min_size = 6;
@@ -93,6 +94,22 @@ impl Map {
             tiles[x][y] = Tile::Stairs;
         }
 
+        // Scatter health potions across rooms procedurally
+        // Skip room 0 (player spawn) — potions appear in dungeon rooms
+        for i in 1..rooms.len() {
+            // ~40% chance a room has a potion
+            if rng.random_bool(0.4) {
+                // Pick a random floor tile inside the room (not the center, to avoid monster/stairs overlap)
+                let px = rng.random_range(rooms[i].x1 + 1..rooms[i].x2 - 1);
+                let py = rng.random_range(rooms[i].y1 + 1..rooms[i].y2 - 1);
+                let (cx, cy) = rooms[i].center();
+                // Don't overwrite stairs or place exactly on monster spawn (room center)
+                if tiles[px][py] == Tile::Floor && (px != cx || py != cy) {
+                    tiles[px][py] = Tile::Potion;
+                }
+            }
+        }
+
         Map {
             width,
             height,
@@ -135,7 +152,9 @@ impl Map {
 
     pub fn is_walkable(&self, x: usize, y: usize) -> bool {
         if x < self.width && y < self.height {
-            self.tiles[x][y] == Tile::Floor || self.tiles[x][y] == Tile::Stairs
+            self.tiles[x][y] == Tile::Floor
+                || self.tiles[x][y] == Tile::Stairs
+                || self.tiles[x][y] == Tile::Potion
         } else {
             false
         }

@@ -22,16 +22,34 @@ impl Monster {
     pub fn new(x: usize, y: usize, monster_type: MonsterType) -> Self {
         match monster_type {
             MonsterType::Goblin => Self {
-                x, y, symbol: 'g', name: "Goblin".to_string(),
-                hp: 6, max_hp: 6, attack: 2, monster_type: MonsterType::Goblin,
+                x,
+                y,
+                symbol: 'g',
+                name: "Goblin".to_string(),
+                hp: 6,
+                max_hp: 6,
+                attack: 2,
+                monster_type: MonsterType::Goblin,
             },
             MonsterType::Skeleton => Self {
-                x, y, symbol: 's', name: "Skeleton".to_string(),
-                hp: 10, max_hp: 10, attack: 4, monster_type: MonsterType::Skeleton,
+                x,
+                y,
+                symbol: 's',
+                name: "Skeleton".to_string(),
+                hp: 10,
+                max_hp: 10,
+                attack: 4,
+                monster_type: MonsterType::Skeleton,
             },
             MonsterType::Troll => Self {
-                x, y, symbol: 'T', name: "Troll".to_string(),
-                hp: 20, max_hp: 20, attack: 8, monster_type: MonsterType::Troll,
+                x,
+                y,
+                symbol: 'T',
+                name: "Troll".to_string(),
+                hp: 20,
+                max_hp: 20,
+                attack: 8,
+                monster_type: MonsterType::Troll,
             },
         }
     }
@@ -39,7 +57,7 @@ impl Monster {
     pub fn random_monster(x: usize, y: usize) -> Self {
         let mut rng = rand::rng();
         let roll = rng.random_range(0..100);
-        
+
         let m_type = if roll < 60 {
             MonsterType::Goblin
         } else if roll < 90 {

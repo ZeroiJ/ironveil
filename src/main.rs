@@ -1,11 +1,7 @@
 mod map;
-mod player;
 mod monster;
+mod player;
 
-use map::{Map, Tile};
-use player::Player;
-use monster::Monster;
-use std::io::{stdout, Write};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode},
@@ -13,6 +9,10 @@ use crossterm::{
     style::{Color, Print, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
+use map::{Map, Tile};
+use monster::Monster;
+use player::Player;
+use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 fn render_map(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
@@ -29,6 +29,9 @@ fn render_map(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
                 }
                 Tile::Stairs => {
                     execute!(stdout, SetForegroundColor(Color::White), Print(">"))?;
+                }
+                Tile::Potion => {
+                    execute!(stdout, SetForegroundColor(Color::Magenta), Print("!"))?;
                 }
             }
         }
@@ -70,7 +73,7 @@ fn main() -> std::io::Result<()> {
         let map_width = term_width as usize;
         let map_height = (term_height as usize).saturating_sub(6); // 1 for Floor/HP, 3 for Log, 2 for buffers
 
-        let map = Map::new(map_width, map_height);
+        let mut map = Map::new(map_width, map_height);
         let (spawn_x, spawn_y) = map.get_starting_position();
         let mut player = Player::new(spawn_x, spawn_y);
         let mut monsters = map.spawn_monsters();
@@ -85,7 +88,10 @@ fn main() -> std::io::Result<()> {
                 stdout,
                 cursor::MoveTo(0, map_height as u16 + 1),
                 SetForegroundColor(Color::White),
-                Print(format!("Floor: {} | HP: {:2}/{:2}    ", current_floor, player.hp, player.max_hp))
+                Print(format!(
+                    "Floor: {} | HP: {:2}/{:2}    ",
+                    current_floor, player.hp, player.max_hp
+                ))
             )?;
 
             // Render Message Log (last 3 lines)
@@ -116,7 +122,9 @@ fn main() -> std::io::Result<()> {
                 let mut next_y = player.y;
 
                 let now = Instant::now();
-                if Some(key_event.code) == last_key && now.duration_since(last_move_time) < Duration::from_millis(100) {
+                if Some(key_event.code) == last_key
+                    && now.duration_since(last_move_time) < Duration::from_millis(100)
+                {
                     continue;
                 }
                 last_key = Some(key_event.code);
@@ -124,10 +132,22 @@ fn main() -> std::io::Result<()> {
 
                 match key_event.code {
                     KeyCode::Char('q') | KeyCode::Esc => break 'outer,
-                    KeyCode::Up => { if next_y > 0 { next_y -= 1; } }
-                    KeyCode::Down => { next_y += 1; }
-                    KeyCode::Left => { if next_x > 0 { next_x -= 1; } }
-                    KeyCode::Right => { next_x += 1; }
+                    KeyCode::Up => {
+                        if next_y > 0 {
+                            next_y -= 1;
+                        }
+                    }
+                    KeyCode::Down => {
+                        next_y += 1;
+                    }
+                    KeyCode::Left => {
+                        if next_x > 0 {
+                            next_x -= 1;
+                        }
+                    }
+                    KeyCode::Right => {
+                        next_x += 1;
+                    }
                     _ => continue,
                 }
 
@@ -144,11 +164,19 @@ fn main() -> std::io::Result<()> {
                     // Attack monster
                     let damage = 5;
                     monsters[i].take_damage(damage);
-                    log.push(format!("You hit the {} for {} damage!", monsters[i].name, damage));
+                    log.push(format!(
+                        "You hit the {} for {} damage!",
+                        monsters[i].name, damage
+                    ));
                     if !monsters[i].is_alive() {
                         log.push(format!("The {} dies!", monsters[i].name));
                         // Clear dead monster from screen
-                        execute!(stdout, cursor::MoveTo(monsters[i].x as u16, monsters[i].y as u16), SetForegroundColor(Color::DarkGrey), Print("."))?;
+                        execute!(
+                            stdout,
+                            cursor::MoveTo(monsters[i].x as u16, monsters[i].y as u16),
+                            SetForegroundColor(Color::DarkGrey),
+                            Print(".")
+                        )?;
                     }
                     // Skip move
                     continue;
@@ -164,6 +192,9 @@ fn main() -> std::io::Result<()> {
                         Tile::Stairs => {
                             execute!(stdout, SetForegroundColor(Color::White), Print(">"))?;
                         }
+                        Tile::Potion => {
+                            execute!(stdout, SetForegroundColor(Color::Magenta), Print("!"))?;
+                        }
                         _ => {}
                     }
 
@@ -175,12 +206,22 @@ fn main() -> std::io::Result<()> {
                         current_floor += 1;
                         break 'inner;
                     }
+
+                    // Check for potion pickup
+                    if map.tiles[player.x][player.y] == Tile::Potion {
+                        let heal_amount = 7;
+                        player.heal(heal_amount);
+                        map.tiles[player.x][player.y] = Tile::Floor;
+                        log.push(format!("You drink a health potion! (+{} HP)", heal_amount));
+                    }
                 }
             }
 
             // Monster Turn
             for i in 0..monsters.len() {
-                if !monsters[i].is_alive() { continue; }
+                if !monsters[i].is_alive() {
+                    continue;
+                }
 
                 let dx = (player.x as i32 - monsters[i].x as i32).abs();
                 let dy = (player.y as i32 - monsters[i].y as i32).abs();
@@ -189,32 +230,62 @@ fn main() -> std::io::Result<()> {
                     // Attack player
                     let damage = monsters[i].attack;
                     player.take_damage(damage);
-                    log.push(format!("The {} hits you for {} damage!", monsters[i].name, damage));
+                    log.push(format!(
+                        "The {} hits you for {} damage!",
+                        monsters[i].name, damage
+                    ));
                 } else if dx + dy < 10 {
                     // Move towards player
                     let mut next_mx = monsters[i].x;
                     let mut next_my = monsters[i].y;
 
-                    if monsters[i].x < player.x { next_mx += 1; }
-                    else if monsters[i].x > player.x { next_mx -= 1; }
-                    else if monsters[i].y < player.y { next_my += 1; }
-                    else if monsters[i].y > player.y { next_my -= 1; }
+                    if monsters[i].x < player.x {
+                        next_mx += 1;
+                    } else if monsters[i].x > player.x {
+                        next_mx -= 1;
+                    } else if monsters[i].y < player.y {
+                        next_my += 1;
+                    } else if monsters[i].y > player.y {
+                        next_my -= 1;
+                    }
 
                     // Check if tile is walkable and not occupied by another monster
                     if map.is_walkable(next_mx, next_my) {
                         let mut occupied = false;
                         for (j, other) in monsters.iter().enumerate() {
-                            if i != j && other.is_alive() && other.x == next_mx && other.y == next_my {
+                            if i != j
+                                && other.is_alive()
+                                && other.x == next_mx
+                                && other.y == next_my
+                            {
                                 occupied = true;
                                 break;
                             }
                         }
                         if !occupied {
                             // Erase old position
-                            execute!(stdout, cursor::MoveTo(monsters[i].x as u16, monsters[i].y as u16))?;
+                            execute!(
+                                stdout,
+                                cursor::MoveTo(monsters[i].x as u16, monsters[i].y as u16)
+                            )?;
                             match map.tiles[monsters[i].x][monsters[i].y] {
-                                Tile::Floor => { execute!(stdout, SetForegroundColor(Color::DarkGrey), Print("."))?; }
-                                Tile::Stairs => { execute!(stdout, SetForegroundColor(Color::White), Print(">"))?; }
+                                Tile::Floor => {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(Color::DarkGrey),
+                                        Print(".")
+                                    )?;
+                                }
+                                Tile::Stairs => {
+                                    execute!(stdout, SetForegroundColor(Color::White), Print(">"))?;
+                                }
+                                Tile::Potion => {
+                                    execute!(
+                                        stdout,
+                                        SetForegroundColor(Color::Magenta),
+                                        Print("!")
+                                    )?;
+                                }
                                 _ => {}
                             }
                             monsters[i].x = next_mx;
@@ -229,11 +300,18 @@ fn main() -> std::io::Result<()> {
                 stdout,
                 cursor::MoveTo(0, map_height as u16 + 1),
                 SetForegroundColor(Color::White),
-                Print(format!("Floor: {} | HP: {:2}/{:2}    ", current_floor, player.hp, player.max_hp))
+                Print(format!(
+                    "Floor: {} | HP: {:2}/{:2}    ",
+                    current_floor, player.hp, player.max_hp
+                ))
             )?;
 
             if !player.is_alive() {
-                execute!(stdout, cursor::MoveTo(player.x as u16, player.y as u16), Print("X"))?;
+                execute!(
+                    stdout,
+                    cursor::MoveTo(player.x as u16, player.y as u16),
+                    Print("X")
+                )?;
                 execute!(
                     stdout,
                     cursor::MoveTo(0, map_height as u16 + 1),
@@ -256,7 +334,6 @@ fn main() -> std::io::Result<()> {
             }
         }
     }
-
 
     execute!(stdout, cursor::Show)?;
     terminal::disable_raw_mode()?;

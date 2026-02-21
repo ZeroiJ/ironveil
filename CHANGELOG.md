@@ -3,6 +3,14 @@
 ## Phase 2: It Wants to Kill You
 *Completed: 2026-02-21*
 
+### 2.5 Health Potions (Procedural Items)
+- Added `Tile::Potion` variant and `!` symbol rendered in magenta.
+- Potions spawn procedurally during map generation (~40% chance per room, avoiding spawn/stairs rooms).
+- Walking over a potion auto-picks it up, healing the player for 7 HP (capped at max HP).
+- Potions are consumed on pickup — tile reverts to floor.
+- Added `Player::heal()` method with max HP clamping.
+- Monsters correctly render potion tiles when moving off them.
+
 ### 2.4 Scrolling Message Log
 - Implemented a persistent UI area at the bottom for game events.
 - Added real-time combat feedback: "You hit the Goblin for 5 damage!", "The Troll hits you for 8 damage!".
