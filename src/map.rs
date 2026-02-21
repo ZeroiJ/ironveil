@@ -1,11 +1,11 @@
 use rand::RngExt;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum Tile {
     Wall,
     Floor,
     Stairs,
-    Potion,
 }
 
 pub struct Map {
@@ -94,28 +94,32 @@ impl Map {
             tiles[x][y] = Tile::Stairs;
         }
 
-        // Scatter health potions across rooms procedurally
-        // Skip room 0 (player spawn) — potions appear in dungeon rooms
-        for i in 1..rooms.len() {
-            // ~40% chance a room has a potion
-            if rng.random_bool(0.4) {
-                // Pick a random floor tile inside the room (not the center, to avoid monster/stairs overlap)
-                let px = rng.random_range(rooms[i].x1 + 1..rooms[i].x2 - 1);
-                let py = rng.random_range(rooms[i].y1 + 1..rooms[i].y2 - 1);
-                let (cx, cy) = rooms[i].center();
-                // Don't overwrite stairs or place exactly on monster spawn (room center)
-                if tiles[px][py] == Tile::Floor && (px != cx || py != cy) {
-                    tiles[px][py] = Tile::Potion;
-                }
-            }
-        }
-
         Map {
             width,
             height,
             tiles,
             rooms,
         }
+    }
+
+    /// Spawn ground items across rooms. Returns a HashMap of position -> Item.
+    /// ~25% chance per room (skip room 0 = player spawn).
+    pub fn spawn_ground_items(&self, floor: i32) -> HashMap<(usize, usize), crate::items::Item> {
+        let mut items = HashMap::new();
+        let mut rng = rand::rng();
+
+        for i in 1..self.rooms.len() {
+            if rng.random_bool(0.25) {
+                let px = rng.random_range(self.rooms[i].x1 + 1..self.rooms[i].x2 - 1);
+                let py = rng.random_range(self.rooms[i].y1 + 1..self.rooms[i].y2 - 1);
+                let (cx, cy) = self.rooms[i].center();
+                // Don't place on monster spawn (center) or stairs
+                if self.tiles[px][py] == Tile::Floor && (px != cx || py != cy) {
+                    items.insert((px, py), crate::items::random_item(floor));
+                }
+            }
+        }
+        items
     }
 
     fn apply_room_to_map(tiles: &mut Vec<Vec<Tile>>, room: &Rect) {
@@ -152,9 +156,7 @@ impl Map {
 
     pub fn is_walkable(&self, x: usize, y: usize) -> bool {
         if x < self.width && y < self.height {
-            self.tiles[x][y] == Tile::Floor
-                || self.tiles[x][y] == Tile::Stairs
-                || self.tiles[x][y] == Tile::Potion
+            self.tiles[x][y] == Tile::Floor || self.tiles[x][y] == Tile::Stairs
         } else {
             false
         }

@@ -1,5 +1,67 @@
 # Ironveil Development Changelog
 
+## Phase 3: You Have an Identity
+*Completed: 2026-02-22*
+
+### 3.8 HUD Updates
+- Status bar now shows Floor, HP, Class name, and equipped weapon name.
+- Second status line displays effective stats (STR/DEX/INT/CON), armor defense, and Tab:Inventory hint.
+- 3-line message log positioned below status lines.
+
+### 3.7 Combat Formula Overhaul
+- Player melee damage: `1 + weapon_bonus + (STR-10)/2`, minimum 1.
+- Incoming damage reduced by armor defense: `raw - armor_def`, minimum 1.
+- Dodge check on all incoming damage (melee + projectile + goblin dash): `(DEX-10)*3`% chance.
+- Dodge messages in log: "You dodge the Goblin's attack!", "You dodge the arrow!"
+
+### 3.6 Starting Equipment
+- Warrior starts with Iron Shortsword (+2 dmg) and Leather Armor (+1 def).
+- Rogue starts with Twin Daggers (+1 dmg).
+- Mage starts with Wooden Staff (+1 dmg) and Ring of Intellect (+2 INT).
+- Starting gear is pre-equipped via `equip_starting_gear()`, not placed in backpack.
+
+### 3.5 Item Spawning & Drops
+- ~25% chance per room to spawn a ground item (skip player spawn room).
+- Monster drops on kill: ~30% chance. Drop type weighted: 50% potion, 25% weapon, 15% armor, 10% ring.
+- Ground items stored in `HashMap<(usize,usize), Item>`, rendered with type-colored symbols.
+- Walking over a ground item auto-picks it up into inventory (or "inventory full" message).
+- Items placed at monster death position on drop.
+
+### 3.4 Inventory System
+- Tab opens full-screen inventory overlay, pauses monster tick while open.
+- Shows equipped weapon/armor/ring and backpack contents (up to 10 items).
+- Letter keys (a-j) to use potions or equip weapons/armor/rings.
+- Equipping swaps old equipment back into backpack.
+- Using a potion heals with INT bonus and removes it from inventory.
+- Tab/Esc closes inventory, redraws map, resets monster tick timer.
+
+### 3.3 Item System (`items.rs`)
+- New `items.rs` module with `Item` struct and `ItemType` enum (Weapon/Armor/Ring/Potion).
+- Items have damage_bonus, defense_bonus, stat_bonus (type + value), heal_amount.
+- Display names include stats: "Shortsword (+2 dmg)", "Ring of Strength (+1 STR)".
+- Tier-scaled generation: floors 1-3 tier 1, floors 4-6 tier 2, floors 7+ tier 3.
+- Weapons: Dagger (+1) → Shortsword (+2) → Longsword (+3) / Greataxe (+5).
+- Armor: Leather (+1) → Chainmail (+2) → Plate (+4).
+- Rings: Strength/Agility/Intellect/Vitality with scaling bonus (+1/+2/+3).
+- Room spawn weighted: 40% potion, 30% weapon, 20% armor, 10% ring.
+
+### 3.2 Character Creation Screen (`ui.rs`)
+- New `ui.rs` module with centered box UI for class selection.
+- Up/Down arrows or 1/2/3 keys to select, Enter to confirm.
+- ASCII art per class, stat bars, starting gear preview, playstyle description.
+- Shown on game start and on restart after death.
+
+### 3.1 Class & Stats System (`player.rs`)
+- Three classes: Warrior (Red @), Rogue (Green @), Mage (Blue @).
+- `Stats` struct: STR, DEX, INT, CON with derived gameplay effects.
+- STR → melee damage bonus `(STR-10)/2`. DEX → dodge chance `(DEX-10)*3`%.
+- CON → max HP `20+(CON-10)`. INT → potion healing bonus `+1 per 2 INT above 10`.
+- `Equipment` struct with weapon/armor/ring slots affecting combat.
+- `Player` rewritten with class, base_stats, equipment, inventory (cap 10).
+- Ring bonuses feed into effective stats, which drive all combat calculations.
+- `Tile::Potion` removed — potions are now inventory items.
+- Player persists across floor transitions (HP, inventory, equipment carry over).
+
 ## Phase 2.6: Real-Time Monster AI
 *Completed: 2026-02-22*
 

@@ -47,7 +47,7 @@ Phase 3 transforms Ironveil from a generic dungeon crawler into a game where you
 - **STR** → melee damage bonus: `(STR - 10) / 2` added to attack damage
 - **DEX** → dodge chance: `(DEX - 10) * 3`% chance to completely avoid incoming damage
 - **CON** → max HP: `base 20 + (CON - 10)` gives Warrior 24 HP, Mage 18 HP
-- **INT** → displayed but no mechanical effect until Phase 4 (spells/mana)
+- **INT** → potion healing bonus: `+1 per 2 INT above 10` (Mage gets better heals)
 
 ---
 
@@ -220,21 +220,21 @@ Floor: 3 | HP: 18/24 | STR:14 DEX:10 INT:8 CON:14 | Warrior | Weapon: Iron Short
 
 ## Implementation Order
 
-| Step | What | Files Touched |
-|------|------|---------------|
-| 1 | Stats struct + class enum + wire into Player | `player.rs` |
-| 2 | Item struct + item generation functions | `items.rs` (new) |
-| 3 | Character creation screen | `ui.rs` (new), `main.rs` |
-| 4 | Player color based on class | `main.rs` |
-| 5 | Ground items (replace Tile::Potion, add item layer) | `map.rs`, `main.rs` |
-| 6 | Item pickup into inventory | `player.rs`, `main.rs` |
-| 7 | Inventory screen (Tab to open, equip/use/drop) | `ui.rs`, `main.rs` |
-| 8 | Equipment affects stats (damage, defense, bonuses) | `player.rs`, `main.rs` |
-| 9 | Monster drops on kill | `main.rs` |
-| 10 | Wire STR/DEX/CON into combat | `main.rs` |
-| 11 | Starting equipment per class | `player.rs`, `items.rs` |
-| 12 | HUD updates (stats, weapon, class name) | `main.rs` |
-| 13 | Update CHANGELOG.md | `CHANGELOG.md` |
+| Step | What | Files Touched | Status |
+|------|------|---------------|--------|
+| 1 | Stats struct + class enum + wire into Player | `player.rs` | ✅ |
+| 2 | Item struct + item generation functions | `items.rs` (new) | ✅ |
+| 3 | Character creation screen | `ui.rs` (new), `main.rs` | ✅ |
+| 4 | Player color based on class | `main.rs` | ✅ |
+| 5 | Ground items (replace Tile::Potion, add item layer) | `map.rs`, `main.rs` | ✅ |
+| 6 | Item pickup into inventory | `player.rs`, `main.rs` | ✅ |
+| 7 | Inventory screen (Tab to open, equip/use/drop) | `ui.rs`, `main.rs` | ✅ |
+| 8 | Equipment affects stats (damage, defense, bonuses) | `player.rs`, `main.rs` | ✅ |
+| 9 | Monster drops on kill | `main.rs` | ✅ |
+| 10 | Wire STR/DEX/CON/INT into combat | `main.rs` | ✅ |
+| 11 | Starting equipment per class | `player.rs`, `items.rs` | ✅ |
+| 12 | HUD updates (stats, weapon, class name) | `main.rs` | ✅ |
+| 13 | Update CHANGELOG.md | `CHANGELOG.md` | ✅ |
 
 ---
 
