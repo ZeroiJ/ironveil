@@ -17,6 +17,9 @@ use projectile::Projectile;
 use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
+const MONSTER_TICK_MS: u64 = 500;
+const POLL_TIMEOUT_MS: u64 = 50;
+
 fn render_map(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(0, 0))?;
     for y in 0..map.height {
@@ -123,6 +126,192 @@ fn all_monster_positions(monsters: &[Monster]) -> Vec<(usize, usize)> {
         .collect()
 }
 
+/// Process projectile movement and collisions. Returns true if player died from a projectile.
+fn process_projectiles(
+    stdout: &mut std::io::Stdout,
+    projectiles: &mut Vec<Projectile>,
+    monsters: &[Monster],
+    player: &mut Player,
+    map: &Map,
+    log: &mut Vec<String>,
+) -> std::io::Result<()> {
+    let mut i = 0;
+    while i < projectiles.len() {
+        // Erase old position
+        let old_x = projectiles[i].x;
+        let old_y = projectiles[i].y;
+        erase_projectile(stdout, map, old_x, old_y)?;
+
+        let still_alive = projectiles[i].advance(map);
+
+        if !still_alive {
+            log.push("The arrow thuds into a wall.".to_string());
+            projectiles.remove(i);
+            continue;
+        }
+
+        let px = projectiles[i].x;
+        let py = projectiles[i].y;
+
+        // Check if projectile hit the player
+        if px == player.x && py == player.y {
+            let dmg = projectiles[i].damage;
+            player.take_damage(dmg);
+            log.push(format!("An arrow hits you for {} damage!", dmg));
+            projectiles.remove(i);
+            continue;
+        }
+
+        // Check if projectile hit a monster (friendly fire stops arrow)
+        let mut hit_monster = false;
+        for monster in monsters.iter() {
+            if monster.is_alive() && monster.x == px && monster.y == py {
+                hit_monster = true;
+                break;
+            }
+        }
+        if hit_monster {
+            log.push("The arrow hits a creature.".to_string());
+            projectiles.remove(i);
+            continue;
+        }
+
+        i += 1;
+    }
+    Ok(())
+}
+
+/// Process all monster AI actions. Returns nothing; mutates monsters, player, projectiles, log.
+fn process_monsters(
+    stdout: &mut std::io::Stdout,
+    monsters: &mut Vec<Monster>,
+    player: &mut Player,
+    projectiles: &mut Vec<Projectile>,
+    map: &Map,
+    log: &mut Vec<String>,
+) -> std::io::Result<()> {
+    let player_pos = (player.x, player.y);
+    let all_positions = all_monster_positions(monsters);
+
+    for i in 0..monsters.len() {
+        if !monsters[i].is_alive() {
+            continue;
+        }
+
+        let occupied = occupied_positions(monsters, i);
+
+        // Check if this monster just went berserk (for log message)
+        let was_berserk = monsters[i].is_berserk;
+
+        let action = monsters[i].decide_action(player_pos, map, &occupied, &all_positions);
+
+        // Log berserk activation
+        if monsters[i].is_berserk && !was_berserk {
+            log.push("The Troll flies into a rage!".to_string());
+        }
+
+        match action {
+            MonsterAction::Nothing => {}
+            MonsterAction::MeleeAttack { damage, ref name } => {
+                player.take_damage(damage);
+                log.push(format!("The {} hits you for {} damage!", name, damage));
+            }
+            MonsterAction::MoveTo(nx, ny) => {
+                // Verify the move is still valid (another monster may have moved there)
+                let mut blocked = false;
+                for (j, other) in monsters.iter().enumerate() {
+                    if i != j && other.is_alive() && other.x == nx && other.y == ny {
+                        blocked = true;
+                        break;
+                    }
+                }
+                // Don't walk onto the player
+                if nx == player.x && ny == player.y {
+                    blocked = true;
+                }
+
+                if !blocked && map.is_walkable(nx, ny) {
+                    erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                    monsters[i].x = nx;
+                    monsters[i].y = ny;
+
+                    // Tier 3 Goblin: second move (speed 2)
+                    if matches!(monsters[i].monster_type, monster::MonsterType::Goblin)
+                        && monsters[i].floor_tier >= 3
+                        && monsters[i].can_see_player
+                    {
+                        let occupied2 = occupied_positions(monsters, i);
+                        if let Some(next2) = map.astar_next_step(
+                            (monsters[i].x, monsters[i].y),
+                            player_pos,
+                            &occupied2,
+                        ) {
+                            let mut blocked2 = false;
+                            for (j, other) in monsters.iter().enumerate() {
+                                if i != j
+                                    && other.is_alive()
+                                    && other.x == next2.0
+                                    && other.y == next2.1
+                                {
+                                    blocked2 = true;
+                                    break;
+                                }
+                            }
+                            if next2.0 == player.x && next2.1 == player.y {
+                                // Second step would land on player — melee attack instead
+                                let damage = monsters[i].attack;
+                                player.take_damage(damage);
+                                log.push(format!(
+                                    "The Goblin dashes and strikes for {} damage!",
+                                    damage
+                                ));
+                            } else if !blocked2 && map.is_walkable(next2.0, next2.1) {
+                                erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                                monsters[i].x = next2.0;
+                                monsters[i].y = next2.1;
+                            }
+                        }
+                    }
+                }
+            }
+            MonsterAction::FireProjectile(proj) => {
+                log.push(format!("The {} fires an arrow!", monsters[i].name));
+                projectiles.push(proj);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn render_ui(
+    stdout: &mut std::io::Stdout,
+    map_height: usize,
+    current_floor: i32,
+    player: &Player,
+    log: &[String],
+) -> std::io::Result<()> {
+    execute!(
+        stdout,
+        cursor::MoveTo(0, map_height as u16 + 1),
+        SetForegroundColor(Color::White),
+        Print(format!(
+            "Floor: {} | HP: {:2}/{:2}    ",
+            current_floor, player.hp, player.max_hp
+        ))
+    )?;
+
+    for (i, msg) in log.iter().rev().take(3).enumerate() {
+        execute!(
+            stdout,
+            cursor::MoveTo(0, map_height as u16 + 2 + i as u16),
+            SetForegroundColor(Color::Grey),
+            Clear(ClearType::UntilNewLine),
+            Print(msg)
+        )?;
+    }
+    Ok(())
+}
+
 fn main() -> std::io::Result<()> {
     terminal::enable_raw_mode()?;
     let mut stdout = stdout();
@@ -143,34 +332,15 @@ fn main() -> std::io::Result<()> {
         let mut player = Player::new(spawn_x, spawn_y);
         let mut monsters = map.spawn_monsters_for_floor(current_floor);
         let mut projectiles: Vec<Projectile> = Vec::new();
+        let mut last_monster_tick = Instant::now();
 
         execute!(stdout, Clear(ClearType::All))?;
         render_map(&mut stdout, &map)?;
         log.push(format!("Welcome to floor {}!", current_floor));
 
         'inner: loop {
-            // --- RENDER UI ---
-            execute!(
-                stdout,
-                cursor::MoveTo(0, map_height as u16 + 1),
-                SetForegroundColor(Color::White),
-                Print(format!(
-                    "Floor: {} | HP: {:2}/{:2}    ",
-                    current_floor, player.hp, player.max_hp
-                ))
-            )?;
-
-            for (i, msg) in log.iter().rev().take(3).enumerate() {
-                execute!(
-                    stdout,
-                    cursor::MoveTo(0, map_height as u16 + 2 + i as u16),
-                    SetForegroundColor(Color::Grey),
-                    Clear(ClearType::UntilNewLine),
-                    Print(msg)
-                )?;
-            }
-
-            // --- RENDER ENTITIES ---
+            // --- RENDER ---
+            render_ui(&mut stdout, map_height, current_floor, &player, &log)?;
             render_monsters(&mut stdout, &monsters)?;
             render_projectiles(&mut stdout, &projectiles)?;
 
@@ -182,240 +352,125 @@ fn main() -> std::io::Result<()> {
             )?;
             stdout.flush()?;
 
-            // --- PLAYER INPUT ---
-            if let Event::Key(key_event) = event::read()? {
-                let mut next_x = player.x;
-                let mut next_y = player.y;
+            // --- NON-BLOCKING INPUT POLL ---
+            // Poll for input with a short timeout so monsters can tick independently
+            let mut player_acted = false;
+            if event::poll(Duration::from_millis(POLL_TIMEOUT_MS))? {
+                if let Event::Key(key_event) = event::read()? {
+                    let mut next_x = player.x;
+                    let mut next_y = player.y;
 
-                let now = Instant::now();
-                if Some(key_event.code) == last_key
-                    && now.duration_since(last_move_time) < Duration::from_millis(100)
-                {
-                    continue;
-                }
-                last_key = Some(key_event.code);
-                last_move_time = now;
+                    let now = Instant::now();
+                    let repeat_too_fast = Some(key_event.code) == last_key
+                        && now.duration_since(last_move_time) < Duration::from_millis(100);
 
-                match key_event.code {
-                    KeyCode::Char('q') | KeyCode::Esc => break 'outer,
-                    KeyCode::Up => {
-                        if next_y > 0 {
-                            next_y -= 1;
-                        }
-                    }
-                    KeyCode::Down => {
-                        next_y += 1;
-                    }
-                    KeyCode::Left => {
-                        if next_x > 0 {
-                            next_x -= 1;
-                        }
-                    }
-                    KeyCode::Right => {
-                        next_x += 1;
-                    }
-                    _ => continue,
-                }
+                    last_key = Some(key_event.code);
 
-                // --- PLAYER COMBAT (bump-to-attack) ---
-                let mut monster_index = None;
-                for (i, monster) in monsters.iter().enumerate() {
-                    if monster.is_alive() && monster.x == next_x && monster.y == next_y {
-                        monster_index = Some(i);
-                        break;
-                    }
-                }
+                    if !repeat_too_fast {
+                        last_move_time = now;
 
-                if let Some(i) = monster_index {
-                    let damage = 5;
-                    monsters[i].take_damage(damage);
-                    log.push(format!(
-                        "You hit the {} for {} damage!",
-                        monsters[i].name, damage
-                    ));
-                    if !monsters[i].is_alive() {
-                        log.push(format!("The {} dies!", monsters[i].name));
-                        erase_entity(&mut stdout, &map, monsters[i].x, monsters[i].y)?;
-                    }
-                    // Attack consumes the turn — fall through to monster turn
-                } else if map.is_walkable(next_x, next_y) {
-                    // --- PLAYER MOVEMENT ---
-                    erase_entity(&mut stdout, &map, player.x, player.y)?;
-
-                    player.x = next_x;
-                    player.y = next_y;
-
-                    if map.tiles[player.x][player.y] == Tile::Stairs {
-                        current_floor += 1;
-                        break 'inner;
-                    }
-
-                    if map.tiles[player.x][player.y] == Tile::Potion {
-                        let heal_amount = 7;
-                        player.heal(heal_amount);
-                        map.tiles[player.x][player.y] = Tile::Floor;
-                        log.push(format!("You drink a health potion! (+{} HP)", heal_amount));
-                    }
-                } else {
-                    // Tried to walk into a wall — still counts as a turn
-                    // (so monsters can act even if you bump a wall)
-                }
-            }
-
-            // --- PROJECTILE PHASE ---
-            // Move all existing projectiles, check for hits
-            let mut i = 0;
-            while i < projectiles.len() {
-                // Erase old position
-                let old_x = projectiles[i].x;
-                let old_y = projectiles[i].y;
-                erase_projectile(&mut stdout, &map, old_x, old_y)?;
-
-                let still_alive = projectiles[i].advance(&map);
-
-                if !still_alive {
-                    // Hit a wall or went out of bounds
-                    log.push("The arrow thuds into a wall.".to_string());
-                    projectiles.remove(i);
-                    continue;
-                }
-
-                let px = projectiles[i].x;
-                let py = projectiles[i].y;
-
-                // Check if projectile hit the player
-                if px == player.x && py == player.y {
-                    let dmg = projectiles[i].damage;
-                    player.take_damage(dmg);
-                    log.push(format!("An arrow hits you for {} damage!", dmg));
-                    projectiles.remove(i);
-                    continue;
-                }
-
-                // Check if projectile hit a monster (friendly fire stops arrow)
-                let mut hit_monster = false;
-                for monster in monsters.iter() {
-                    if monster.is_alive() && monster.x == px && monster.y == py {
-                        hit_monster = true;
-                        break;
-                    }
-                }
-                if hit_monster {
-                    log.push("The arrow hits a creature.".to_string());
-                    projectiles.remove(i);
-                    continue;
-                }
-
-                i += 1;
-            }
-
-            // --- MONSTER TURN ---
-            let player_pos = (player.x, player.y);
-            let all_positions = all_monster_positions(&monsters);
-
-            for i in 0..monsters.len() {
-                if !monsters[i].is_alive() {
-                    continue;
-                }
-
-                let occupied = occupied_positions(&monsters, i);
-
-                // Check if this monster just went berserk (for log message)
-                let was_berserk = monsters[i].is_berserk;
-
-                let action = monsters[i].decide_action(player_pos, &map, &occupied, &all_positions);
-
-                // Log berserk activation
-                if monsters[i].is_berserk && !was_berserk {
-                    log.push("The Troll flies into a rage!".to_string());
-                }
-
-                match action {
-                    MonsterAction::Nothing => {}
-                    MonsterAction::MeleeAttack { damage, ref name } => {
-                        player.take_damage(damage);
-                        log.push(format!("The {} hits you for {} damage!", name, damage));
-                    }
-                    MonsterAction::MoveTo(nx, ny) => {
-                        // Verify the move is still valid (another monster may have moved there)
-                        let mut blocked = false;
-                        for (j, other) in monsters.iter().enumerate() {
-                            if i != j && other.is_alive() && other.x == nx && other.y == ny {
-                                blocked = true;
-                                break;
-                            }
-                        }
-                        // Don't walk onto the player
-                        if nx == player.x && ny == player.y {
-                            blocked = true;
-                        }
-
-                        if !blocked && map.is_walkable(nx, ny) {
-                            erase_entity(&mut stdout, &map, monsters[i].x, monsters[i].y)?;
-                            monsters[i].x = nx;
-                            monsters[i].y = ny;
-
-                            // Tier 3 Goblin: second move (speed 2)
-                            if matches!(monsters[i].monster_type, monster::MonsterType::Goblin)
-                                && monsters[i].floor_tier >= 3
-                                && monsters[i].can_see_player
-                            {
-                                let occupied2 = occupied_positions(&monsters, i);
-                                if let Some(next2) = map.astar_next_step(
-                                    (monsters[i].x, monsters[i].y),
-                                    player_pos,
-                                    &occupied2,
-                                ) {
-                                    let mut blocked2 = false;
-                                    for (j, other) in monsters.iter().enumerate() {
-                                        if i != j
-                                            && other.is_alive()
-                                            && other.x == next2.0
-                                            && other.y == next2.1
-                                        {
-                                            blocked2 = true;
-                                            break;
-                                        }
-                                    }
-                                    if next2.0 == player.x && next2.1 == player.y {
-                                        // Second step would land on player — melee attack instead
-                                        let damage = monsters[i].attack;
-                                        player.take_damage(damage);
-                                        log.push(format!(
-                                            "The Goblin dashes and strikes for {} damage!",
-                                            damage
-                                        ));
-                                    } else if !blocked2 && map.is_walkable(next2.0, next2.1) {
-                                        erase_entity(
-                                            &mut stdout,
-                                            &map,
-                                            monsters[i].x,
-                                            monsters[i].y,
-                                        )?;
-                                        monsters[i].x = next2.0;
-                                        monsters[i].y = next2.1;
-                                    }
+                        match key_event.code {
+                            KeyCode::Char('q') | KeyCode::Esc => break 'outer,
+                            KeyCode::Up => {
+                                if next_y > 0 {
+                                    next_y -= 1;
                                 }
                             }
+                            KeyCode::Down => {
+                                next_y += 1;
+                            }
+                            KeyCode::Left => {
+                                if next_x > 0 {
+                                    next_x -= 1;
+                                }
+                            }
+                            KeyCode::Right => {
+                                next_x += 1;
+                            }
+                            _ => {} // Non-movement key — don't set player_acted
                         }
-                    }
-                    MonsterAction::FireProjectile(proj) => {
-                        log.push(format!("The {} fires an arrow!", monsters[i].name));
-                        projectiles.push(proj);
+
+                        // Only process if position actually changed
+                        if next_x != player.x || next_y != player.y {
+                            // --- PLAYER COMBAT (bump-to-attack) ---
+                            let mut monster_index = None;
+                            for (i, monster) in monsters.iter().enumerate() {
+                                if monster.is_alive() && monster.x == next_x && monster.y == next_y
+                                {
+                                    monster_index = Some(i);
+                                    break;
+                                }
+                            }
+
+                            if let Some(i) = monster_index {
+                                let damage = 5;
+                                monsters[i].take_damage(damage);
+                                log.push(format!(
+                                    "You hit the {} for {} damage!",
+                                    monsters[i].name, damage
+                                ));
+                                if !monsters[i].is_alive() {
+                                    log.push(format!("The {} dies!", monsters[i].name));
+                                    erase_entity(&mut stdout, &map, monsters[i].x, monsters[i].y)?;
+                                }
+                                player_acted = true;
+                            } else if map.is_walkable(next_x, next_y) {
+                                // --- PLAYER MOVEMENT ---
+                                erase_entity(&mut stdout, &map, player.x, player.y)?;
+
+                                player.x = next_x;
+                                player.y = next_y;
+
+                                if map.tiles[player.x][player.y] == Tile::Stairs {
+                                    current_floor += 1;
+                                    break 'inner;
+                                }
+
+                                if map.tiles[player.x][player.y] == Tile::Potion {
+                                    let heal_amount = 7;
+                                    player.heal(heal_amount);
+                                    map.tiles[player.x][player.y] = Tile::Floor;
+                                    log.push(format!(
+                                        "You drink a health potion! (+{} HP)",
+                                        heal_amount
+                                    ));
+                                }
+                                player_acted = true;
+                            }
+                        }
                     }
                 }
             }
 
-            // --- UPDATE UI ---
-            execute!(
-                stdout,
-                cursor::MoveTo(0, map_height as u16 + 1),
-                SetForegroundColor(Color::White),
-                Print(format!(
-                    "Floor: {} | HP: {:2}/{:2}    ",
-                    current_floor, player.hp, player.max_hp
-                ))
-            )?;
+            // --- MONSTER TICK (independent of player input) ---
+            let now = Instant::now();
+            if now.duration_since(last_monster_tick) >= Duration::from_millis(MONSTER_TICK_MS) {
+                last_monster_tick = now;
+
+                // Process projectiles
+                process_projectiles(
+                    &mut stdout,
+                    &mut projectiles,
+                    &monsters,
+                    &mut player,
+                    &map,
+                    &mut log,
+                )?;
+
+                // Process monster AI
+                process_monsters(
+                    &mut stdout,
+                    &mut monsters,
+                    &mut player,
+                    &mut projectiles,
+                    &map,
+                    &mut log,
+                )?;
+            }
+
+            // Suppress unused variable warning — player_acted reserved for future
+            // hybrid tick logic (e.g. reset monster tick on player action)
+            let _ = player_acted;
 
             // --- DEATH CHECK ---
             if !player.is_alive() {

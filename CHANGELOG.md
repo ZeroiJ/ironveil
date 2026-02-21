@@ -1,5 +1,17 @@
 # Ironveil Development Changelog
 
+## Phase 2.6: Real-Time Monster AI
+*Completed: 2026-02-22*
+
+### 2.6.1 Independent Monster Tick System
+- Replaced turn-based game loop with real-time hybrid model.
+- Monsters now act independently on a 500ms tick timer, regardless of player input.
+- Player moves instantly on keypress (uncapped speed) — no waiting for monster turns.
+- Game loop uses non-blocking `event::poll()` (50ms timeout) instead of blocking `event::read()`.
+- Projectiles advance on the monster tick (every 500ms).
+- Refactored monster processing and projectile processing into dedicated functions.
+- Extracted UI rendering into `render_ui()` helper.
+
 ## Phase 2.5: Monsters That Think
 *Completed: 2026-02-21*
 
