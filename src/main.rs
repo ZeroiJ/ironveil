@@ -23,7 +23,7 @@ use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
 const MONSTER_TICK_MS: u64 = 500;
-const POLL_TIMEOUT_MS: u64 = 50;
+const POLL_TIMEOUT_MS: u64 = 16; // ~60fps loop
 
 fn render_map(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(0, 0))?;
@@ -470,7 +470,7 @@ fn main() -> std::io::Result<()> {
 
                         let now = Instant::now();
                         let repeat_too_fast = Some(key_event.code) == last_key
-                            && now.duration_since(last_move_time) < Duration::from_millis(100);
+                            && now.duration_since(last_move_time) < Duration::from_millis(50);
 
                         last_key = Some(key_event.code);
 
