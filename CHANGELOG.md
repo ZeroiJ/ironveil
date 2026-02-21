@@ -1,5 +1,29 @@
 # Ironveil Development Changelog
 
+## Phase 2: It Wants to Kill You
+*Completed: 2026-02-21*
+
+### 2.4 Scrolling Message Log
+- Implemented a persistent UI area at the bottom for game events.
+- Added real-time combat feedback: "You hit the Goblin for 5 damage!", "The Troll hits you for 8 damage!".
+- Log displays the last 3 messages and handles screen clearing for readability.
+
+### 2.3 Monster AI & Turn-based Movement
+- Implemented simple chasing AI: monsters move toward the player if within 10 tiles.
+- Turn-based logic: monsters only move or attack after the player takes an action.
+- Added collision detection for monsters to prevent them from stacking on the same tile.
+
+### 2.2 Bump-to-Attack Combat
+- Implemented standard roguelike "bump" combat (moving into a monster attacks it).
+- Added damage calculation and death checks for both player and monsters.
+- Monsters now disappear from the screen upon death, restoring the floor tile.
+
+### 2.1 Entity System (Player & Monsters)
+- Created `player.rs` and `monster.rs` modules.
+- Defined three monster types: Goblin (weak/fast), Skeleton (medium), and Troll (strong/slow).
+- Implemented HP tracking and simple stat management for all entities.
+- Added random monster spawning (one per room).
+
 ## Phase 1: The World Exists
 *Completed: 2026-02-21*
 

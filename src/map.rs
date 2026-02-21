@@ -11,13 +11,14 @@ pub struct Map {
     pub width: usize,
     pub height: usize,
     pub tiles: Vec<Vec<Tile>>,
+    pub rooms: Vec<Rect>,
 }
 
-struct Rect {
-    x1: usize,
-    y1: usize,
-    x2: usize,
-    y2: usize,
+pub struct Rect {
+    pub x1: usize,
+    pub y1: usize,
+    pub x2: usize,
+    pub y2: usize,
 }
 
 impl Rect {
@@ -96,6 +97,7 @@ impl Map {
             width,
             height,
             tiles,
+            rooms,
         }
     }
 
@@ -137,6 +139,16 @@ impl Map {
         } else {
             false
         }
+    }
+
+    pub fn spawn_monsters(&self) -> Vec<crate::monster::Monster> {
+        let mut monsters = Vec::new();
+        // Skip rooms[0] (player spawn) and rooms.last() (stairs spawn)
+        for i in 1..self.rooms.len().saturating_sub(1) {
+            let (x, y) = self.rooms[i].center();
+            monsters.push(crate::monster::Monster::random_monster(x, y));
+        }
+        monsters
     }
 
     pub fn get_starting_position(&self) -> (usize, usize) {
