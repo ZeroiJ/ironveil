@@ -160,14 +160,167 @@ impl Map {
         }
     }
 
-    pub fn spawn_monsters(&self) -> Vec<crate::monster::Monster> {
+    pub fn spawn_monsters_for_floor(&self, floor: i32) -> Vec<crate::monster::Monster> {
         let mut monsters = Vec::new();
         // Skip rooms[0] (player spawn) and rooms.last() (stairs spawn)
         for i in 1..self.rooms.len().saturating_sub(1) {
             let (x, y) = self.rooms[i].center();
-            monsters.push(crate::monster::Monster::random_monster(x, y));
+            monsters.push(crate::monster::Monster::random_monster(x, y, floor));
         }
         monsters
+    }
+
+    /// Bresenham's line algorithm for line-of-sight checks.
+    /// Returns true if there is a clear line from (x1,y1) to (x2,y2) with no Wall tiles blocking.
+    pub fn has_line_of_sight(&self, x1: usize, y1: usize, x2: usize, y2: usize) -> bool {
+        let mut cx = x1 as i32;
+        let mut cy = y1 as i32;
+        let tx = x2 as i32;
+        let ty = y2 as i32;
+
+        let dx = (tx - cx).abs();
+        let dy = -(ty - cy).abs();
+        let sx = if cx < tx { 1 } else { -1 };
+        let sy = if cy < ty { 1 } else { -1 };
+        let mut err = dx + dy;
+
+        loop {
+            // Don't check the start or end tile themselves — only tiles in between
+            if (cx != x1 as i32 || cy != y1 as i32) && (cx != tx || cy != ty) {
+                let ux = cx as usize;
+                let uy = cy as usize;
+                if ux >= self.width || uy >= self.height || self.tiles[ux][uy] == Tile::Wall {
+                    return false;
+                }
+            }
+            if cx == tx && cy == ty {
+                break;
+            }
+            let e2 = 2 * err;
+            if e2 >= dy {
+                err += dy;
+                cx += sx;
+            }
+            if e2 <= dx {
+                err += dx;
+                cy += sy;
+            }
+        }
+        true
+    }
+
+    /// A* pathfinding. Returns the next step toward `goal` from `start`, or None if no path.
+    /// `occupied` is a list of positions blocked by other monsters.
+    pub fn astar_next_step(
+        &self,
+        start: (usize, usize),
+        goal: (usize, usize),
+        occupied: &[(usize, usize)],
+    ) -> Option<(usize, usize)> {
+        use std::cmp::Ordering;
+        use std::collections::{BinaryHeap, HashMap};
+
+        #[derive(Eq, PartialEq)]
+        struct Node {
+            cost: i32,
+            pos: (usize, usize),
+        }
+        impl Ord for Node {
+            fn cmp(&self, other: &Self) -> Ordering {
+                other.cost.cmp(&self.cost) // min-heap
+            }
+        }
+        impl PartialOrd for Node {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut open = BinaryHeap::new();
+        let mut came_from: HashMap<(usize, usize), (usize, usize)> = HashMap::new();
+        let mut g_score: HashMap<(usize, usize), i32> = HashMap::new();
+
+        g_score.insert(start, 0);
+        let h = |p: (usize, usize)| -> i32 {
+            (p.0 as i32 - goal.0 as i32).abs() + (p.1 as i32 - goal.1 as i32).abs()
+        };
+        open.push(Node {
+            cost: h(start),
+            pos: start,
+        });
+
+        // Limit search to prevent lag on huge maps
+        let mut iterations = 0;
+        let max_iterations = 500;
+
+        while let Some(Node { pos, .. }) = open.pop() {
+            iterations += 1;
+            if iterations > max_iterations {
+                return None;
+            }
+
+            if pos == goal {
+                // Reconstruct path, return the first step
+                let mut current = goal;
+                while let Some(&prev) = came_from.get(&current) {
+                    if prev == start {
+                        return Some(current);
+                    }
+                    current = prev;
+                }
+                return Some(goal); // start == goal neighbor
+            }
+
+            let neighbors: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            for (ndx, ndy) in &neighbors {
+                let nx = pos.0 as i32 + ndx;
+                let ny = pos.1 as i32 + ndy;
+                if nx < 0 || ny < 0 {
+                    continue;
+                }
+                let np = (nx as usize, ny as usize);
+
+                if !self.is_walkable(np.0, np.1) {
+                    continue;
+                }
+                // Don't path through other monsters (unless it's the goal itself)
+                if np != goal && occupied.contains(&np) {
+                    continue;
+                }
+
+                let tentative_g = g_score
+                    .get(&pos)
+                    .copied()
+                    .unwrap_or(i32::MAX)
+                    .saturating_add(1);
+                if tentative_g < g_score.get(&np).copied().unwrap_or(i32::MAX) {
+                    came_from.insert(np, pos);
+                    g_score.insert(np, tentative_g);
+                    open.push(Node {
+                        cost: tentative_g + h(np),
+                        pos: np,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the distance between two points (Manhattan).
+    pub fn distance(x1: usize, y1: usize, x2: usize, y2: usize) -> i32 {
+        (x1 as i32 - x2 as i32).abs() + (y1 as i32 - y2 as i32).abs()
+    }
+
+    /// Check if a position is in a corridor (walls on 2+ opposite sides).
+    pub fn is_corridor(&self, x: usize, y: usize) -> bool {
+        if x == 0 || y == 0 || x >= self.width - 1 || y >= self.height - 1 {
+            return false;
+        }
+        let wall_left = self.tiles[x - 1][y] == Tile::Wall;
+        let wall_right = self.tiles[x + 1][y] == Tile::Wall;
+        let wall_up = self.tiles[x][y - 1] == Tile::Wall;
+        let wall_down = self.tiles[x][y + 1] == Tile::Wall;
+        (wall_left && wall_right) || (wall_up && wall_down)
     }
 
     pub fn get_starting_position(&self) -> (usize, usize) {

@@ -1,5 +1,57 @@
 # Ironveil Development Changelog
 
+## Phase 2.5: Monsters That Think
+*Completed: 2026-02-21*
+
+### 2.5.9 Floor-Tier Scaling System
+- Monster behaviors scale with floor depth: Tier 1 (floors 1-3), Tier 2 (floors 4-6), Tier 3 (floors 7+).
+- `Monster::new()` takes a `floor` parameter, `spawn_monsters_for_floor()` passes current floor through.
+- Early floors teach basics; deeper floors punish mistakes with tactical AI.
+
+### 2.5.8 Troll AI — Corridor Blocking & Berserk Mode
+- Tier 1: Slow chase (acts every other turn). Hits hard (8 damage).
+- Tier 2+: Blocks corridors — stops moving and waits when in a narrow passage with LOS on player.
+- Tier 3+: Berserk mode at <30% HP — attack jumps to 12, no longer slow. "The Troll flies into a rage!"
+
+### 2.5.7 Goblin AI — Retreat & Lure
+- Tier 1: Aggressive chase + melee attack.
+- Tier 2+: Retreats when low HP, pathfinds toward nearest ally (lure behavior).
+- Tier 3+: Moves 2 tiles per turn. Dash-attack if second step lands on player.
+
+### 2.5.6 Skeleton AI — Ranged Arrows & Repositioning
+- Tier 1: Chase + melee with A* pathfinding.
+- Tier 2+: Fires arrows at 3-8 tile range with LOS. 2-turn cooldown between shots.
+- Tier 3+: Repositions away if player closes within 3 tiles.
+
+### 2.5.5 Projectile System
+- Created `projectile.rs` with `Projectile` struct (position, direction, damage, symbol).
+- Directional arrow symbols: `-`, `|`, `/`, `\` based on travel direction. Rendered in yellow.
+- Projectile lifecycle: spawn → advance 1 tile/turn → collide with player/monster/wall → remove.
+- Arrow-player hits deal damage with log message. Arrow-monster hits stop the arrow (friendly fire).
+
+### 2.5.4 Monster Behavior State Machine
+- Added `BehaviorState` enum: Idle, Chase, Attack, Ranged, Retreat, Reposition.
+- Added `MonsterAction` enum: Nothing, MoveTo, MeleeAttack, FireProjectile.
+- `decide_action()` dispatches to monster-specific AI functions per turn.
+- Each monster type has its own AI function with tier-aware behavior.
+
+### 2.5.3 Monster Struct Overhaul
+- Added fields: `behavior`, `can_see_player`, `last_known_player_pos`, `ranged_cooldown`, `turn_parity`, `floor_tier`, `is_berserk`, `base_attack`.
+- Shared helper methods: `flee_from()`, `wander()` (toward last known pos then random), `find_nearest_ally()`.
+
+### 2.5.2 A* Pathfinding
+- Implemented A* search in `map.rs` (`astar_next_step`).
+- Returns the next step toward a goal, respects walls and occupied monster positions.
+- 500-iteration safety limit to prevent lag on large maps.
+- Replaces old single-axis movement — monsters navigate around corners.
+
+### 2.5.1 Bresenham Line-of-Sight
+- Implemented Bresenham's line algorithm in `map.rs` (`has_line_of_sight`).
+- Monsters only detect the player through clear sightlines — walls block vision.
+- Also used for Skeleton ranged attack eligibility.
+- Added `is_corridor()` helper for Troll corridor-blocking detection.
+- Added `distance()` Manhattan distance helper.
+
 ## Phase 2: It Wants to Kill You
 *Completed: 2026-02-21*
 
