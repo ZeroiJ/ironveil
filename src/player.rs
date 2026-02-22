@@ -1,5 +1,159 @@
 use crate::items::{Item, ItemType};
 
+// --- Ability System ---
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum AbilityType {
+    PowerAttack,    // Warrior 1: next melee 2x damage
+    WarCry,         // Warrior 2: AoE stun
+    ShadowStep,     // Rogue 1: directional teleport + shadow strike buff
+    PoisonBlade,    // Rogue 2: next 3 hits apply poison
+    ChainLightning, // Mage 1: directional chain damage
+    FrostNova,      // Mage 2: AoE freeze + damage
+}
+
+#[derive(Clone, Debug)]
+pub struct Ability {
+    pub name: String,
+    pub ability_type: AbilityType,
+    pub cooldown_max: i32,
+    pub cooldown_remaining: i32,
+    pub is_active: bool,           // buff currently active
+    pub charges: i32,              // for Poison Blade (3 hits)
+    pub buff_ticks_remaining: i32, // ticks until buff expires
+}
+
+impl Ability {
+    pub fn new(ability_type: AbilityType) -> Self {
+        match ability_type {
+            AbilityType::PowerAttack => Self {
+                name: "Power Attack".to_string(),
+                ability_type,
+                cooldown_max: 8,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::WarCry => Self {
+                name: "War Cry".to_string(),
+                ability_type,
+                cooldown_max: 12,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::ShadowStep => Self {
+                name: "Shadow Step".to_string(),
+                ability_type,
+                cooldown_max: 7,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::PoisonBlade => Self {
+                name: "Poison Blade".to_string(),
+                ability_type,
+                cooldown_max: 10,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::ChainLightning => Self {
+                name: "Chain Lightning".to_string(),
+                ability_type,
+                cooldown_max: 6,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::FrostNova => Self {
+                name: "Frost Nova".to_string(),
+                ability_type,
+                cooldown_max: 10,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+        }
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.cooldown_remaining <= 0
+    }
+
+    pub fn activate(&mut self) {
+        self.cooldown_remaining = self.cooldown_max;
+        self.is_active = true;
+        // Set buff duration based on type
+        match self.ability_type {
+            AbilityType::PowerAttack => self.buff_ticks_remaining = 5,
+            AbilityType::ShadowStep => self.buff_ticks_remaining = 2,
+            AbilityType::PoisonBlade => {
+                self.charges = 3;
+                self.buff_ticks_remaining = 15; // expires after 15 ticks if charges not used
+            }
+            _ => {} // instant abilities (WarCry, ChainLightning, FrostNova)
+        }
+    }
+
+    /// Tick cooldown down by 1. Also tick buff expiration.
+    pub fn tick(&mut self) {
+        if self.cooldown_remaining > 0 {
+            self.cooldown_remaining -= 1;
+        }
+        if self.is_active && self.buff_ticks_remaining > 0 {
+            self.buff_ticks_remaining -= 1;
+            if self.buff_ticks_remaining <= 0 {
+                self.is_active = false;
+                self.charges = 0;
+            }
+        }
+    }
+
+    /// Consume one charge of the buff (e.g. Power Attack lands, Poison Blade hit).
+    /// Returns true if the buff is now fully consumed.
+    pub fn consume_charge(&mut self) -> bool {
+        match self.ability_type {
+            AbilityType::PowerAttack | AbilityType::ShadowStep => {
+                // Single-use buff — consumed on hit
+                self.is_active = false;
+                self.buff_ticks_remaining = 0;
+                true
+            }
+            AbilityType::PoisonBlade => {
+                self.charges -= 1;
+                if self.charges <= 0 {
+                    self.is_active = false;
+                    self.buff_ticks_remaining = 0;
+                    return true;
+                }
+                false
+            }
+            _ => false,
+        }
+    }
+
+    pub fn status_text(&self) -> String {
+        if self.is_active {
+            if self.charges > 0 {
+                format!("{}: ACTIVE ({})", self.name, self.charges)
+            } else {
+                format!("{}: ACTIVE", self.name)
+            }
+        } else if self.cooldown_remaining > 0 {
+            format!("{}: {}s", self.name, self.cooldown_remaining)
+        } else {
+            format!("{}: READY", self.name)
+        }
+    }
+}
+
 // --- Class System ---
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -130,6 +284,16 @@ pub struct Player {
     pub base_stats: Stats,
     pub equipment: Equipment,
     pub inventory: Vec<Item>,
+    // Abilities
+    pub ability_1: Option<Ability>,
+    pub ability_2: Option<Ability>,
+    pub pending_ability_direction: Option<u8>, // which ability (1 or 2) is waiting for direction
+    // XP / Leveling
+    pub xp: i32,
+    pub level: i32,
+    pub xp_to_next_level: i32,
+    // Status effects
+    pub poison_ticks: i32,
 }
 
 pub const INVENTORY_CAPACITY: usize = 10;
@@ -138,6 +302,13 @@ impl Player {
     pub fn new(x: usize, y: usize, class: Class) -> Self {
         let base_stats = class.base_stats();
         let max_hp = base_stats.max_hp();
+
+        // Each class starts with ability 1; ability 2 unlocks at level 5
+        let ability_1 = match class {
+            Class::Warrior => Some(Ability::new(AbilityType::PowerAttack)),
+            Class::Rogue => Some(Ability::new(AbilityType::ShadowStep)),
+            Class::Mage => Some(Ability::new(AbilityType::ChainLightning)),
+        };
 
         Self {
             x,
@@ -148,6 +319,13 @@ impl Player {
             base_stats,
             equipment: Equipment::new(),
             inventory: Vec::new(),
+            ability_1,
+            ability_2: None,
+            pending_ability_direction: None,
+            xp: 0,
+            level: 1,
+            xp_to_next_level: 50, // Level 2 threshold
+            poison_ticks: 0,
         }
     }
 
@@ -287,5 +465,160 @@ impl Player {
         self.recalculate_max_hp();
         // Start at full HP with new max
         self.hp = self.max_hp;
+    }
+
+    /// Tick ability cooldowns. Called each monster tick.
+    pub fn tick_abilities(&mut self) {
+        if let Some(ref mut a) = self.ability_1 {
+            a.tick();
+        }
+        if let Some(ref mut a) = self.ability_2 {
+            a.tick();
+        }
+    }
+
+    /// Check if Power Attack or Shadow Strike buff is active (2x melee).
+    pub fn has_damage_buff(&self) -> bool {
+        if let Some(ref a) = self.ability_1 {
+            if a.is_active
+                && (a.ability_type == AbilityType::PowerAttack
+                    || a.ability_type == AbilityType::ShadowStep)
+            {
+                return true;
+            }
+        }
+        if let Some(ref a) = self.ability_2 {
+            if a.is_active
+                && (a.ability_type == AbilityType::PowerAttack
+                    || a.ability_type == AbilityType::ShadowStep)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if Poison Blade buff is active (apply poison on hit).
+    pub fn has_poison_buff(&self) -> bool {
+        if let Some(ref a) = self.ability_1 {
+            if a.is_active && a.ability_type == AbilityType::PoisonBlade {
+                return true;
+            }
+        }
+        if let Some(ref a) = self.ability_2 {
+            if a.is_active && a.ability_type == AbilityType::PoisonBlade {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Consume a damage buff charge after a melee hit. Returns the ability slot that was consumed (1 or 2).
+    pub fn consume_damage_buff(&mut self) -> Option<u8> {
+        if let Some(ref mut a) = self.ability_1 {
+            if a.is_active
+                && (a.ability_type == AbilityType::PowerAttack
+                    || a.ability_type == AbilityType::ShadowStep)
+            {
+                a.consume_charge();
+                return Some(1);
+            }
+        }
+        if let Some(ref mut a) = self.ability_2 {
+            if a.is_active
+                && (a.ability_type == AbilityType::PowerAttack
+                    || a.ability_type == AbilityType::ShadowStep)
+            {
+                a.consume_charge();
+                return Some(2);
+            }
+        }
+        None
+    }
+
+    /// Consume a poison buff charge after a melee hit. Returns the ability slot that was consumed.
+    pub fn consume_poison_buff(&mut self) -> Option<u8> {
+        if let Some(ref mut a) = self.ability_1 {
+            if a.is_active && a.ability_type == AbilityType::PoisonBlade {
+                a.consume_charge();
+                return Some(1);
+            }
+        }
+        if let Some(ref mut a) = self.ability_2 {
+            if a.is_active && a.ability_type == AbilityType::PoisonBlade {
+                a.consume_charge();
+                return Some(2);
+            }
+        }
+        None
+    }
+
+    /// Add XP and check for level up. Returns a vec of log messages for any level ups.
+    pub fn gain_xp(&mut self, amount: i32) -> Vec<String> {
+        let mut messages = Vec::new();
+        self.xp += amount;
+
+        while self.xp >= self.xp_to_next_level && self.level < 10 {
+            self.level += 1;
+            let leftover = self.xp - self.xp_to_next_level;
+
+            // Calculate next threshold: threshold(n) = threshold(n-1) + 20 + (n-1)*40
+            self.xp_to_next_level = self.xp_to_next_level + 20 + (self.level - 1) * 40;
+            self.xp = leftover;
+
+            // +3 max HP, heal 3
+            self.max_hp += 3;
+            self.hp = (self.hp + 3).min(self.max_hp);
+
+            // Class stat boosts
+            let stat_msg = match self.class {
+                Class::Warrior => {
+                    self.base_stats.str_ += 1;
+                    self.base_stats.con += 1;
+                    self.recalculate_max_hp();
+                    "STR +1, CON +1"
+                }
+                Class::Rogue => {
+                    self.base_stats.dex += 1;
+                    self.base_stats.str_ += 1;
+                    "DEX +1, STR +1"
+                }
+                Class::Mage => {
+                    self.base_stats.int += 1;
+                    self.base_stats.dex += 1;
+                    "INT +1, DEX +1"
+                }
+            };
+
+            messages.push(format!(
+                "You reach level {}! {}, Max HP +3",
+                self.level, stat_msg
+            ));
+
+            // Levels 3 and 7: reduce all ability cooldowns by 1 (permanent)
+            if self.level == 3 || self.level == 7 {
+                if let Some(ref mut a) = self.ability_1 {
+                    a.cooldown_max = (a.cooldown_max - 1).max(1);
+                }
+                if let Some(ref mut a) = self.ability_2 {
+                    a.cooldown_max = (a.cooldown_max - 1).max(1);
+                }
+                messages.push("Your abilities grow stronger! Cooldowns reduced.".to_string());
+            }
+
+            // Level 5: unlock 2nd ability
+            if self.level == 5 && self.ability_2.is_none() {
+                self.ability_2 = match self.class {
+                    Class::Warrior => Some(Ability::new(AbilityType::WarCry)),
+                    Class::Rogue => Some(Ability::new(AbilityType::PoisonBlade)),
+                    Class::Mage => Some(Ability::new(AbilityType::FrostNova)),
+                };
+                if let Some(ref a) = self.ability_2 {
+                    messages.push(format!("New ability unlocked: {}!", a.name));
+                }
+            }
+        }
+
+        messages
     }
 }

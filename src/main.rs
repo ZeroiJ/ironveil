@@ -15,10 +15,11 @@ use crossterm::{
 use items::{Item, ItemType};
 use map::{Map, Tile};
 use monster::{Monster, MonsterAction};
-use player::{Class, Player};
+use player::{AbilityType, Class, Player};
 use projectile::Projectile;
 use rand::RngExt;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::io::{stdout, Write};
 use std::time::{Duration, Instant};
 
@@ -54,15 +55,36 @@ fn render_tile(stdout: &mut std::io::Stdout, tile: Tile) -> std::io::Result<()> 
 fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::io::Result<()> {
     for monster in monsters {
         if monster.is_alive() {
-            execute!(
-                stdout,
-                cursor::MoveTo(monster.x as u16, monster.y as u16),
-                SetForegroundColor(match monster.symbol {
+            // Wraiths inside walls are invisible
+            if monster.is_phasing {
+                continue;
+            }
+            // Status effect colors override normal colors
+            let color = if monster.stun_ticks > 0 {
+                Color::DarkGrey
+            } else if monster.freeze_ticks > 0 {
+                Color::Cyan
+            } else if monster.poison_ticks > 0 {
+                Color::Green
+            } else {
+                match monster.symbol {
                     'g' => Color::Green,
                     's' => Color::White,
                     'T' => Color::Red,
+                    'b' => Color::DarkYellow,
+                    'x' => Color::DarkMagenta,
+                    'W' => Color::DarkCyan,
+                    'N' => Color::DarkRed,
+                    'K' => Color::Yellow,  // Goblin King - bright gold
+                    'D' => Color::DarkRed, // Bone Dragon - dark red
+                    'S' => Color::Magenta, // Shadow Lord - magenta
                     _ => Color::Magenta,
-                }),
+                }
+            };
+            execute!(
+                stdout,
+                cursor::MoveTo(monster.x as u16, monster.y as u16),
+                SetForegroundColor(color),
                 Print(monster.symbol)
             )?;
         }
@@ -101,6 +123,21 @@ fn render_ground_items(
             cursor::MoveTo(x as u16, y as u16),
             SetForegroundColor(color),
             Print(item.symbol)
+        )?;
+    }
+    Ok(())
+}
+
+fn render_webs(
+    stdout: &mut std::io::Stdout,
+    webs: &std::collections::HashSet<(usize, usize)>,
+) -> std::io::Result<()> {
+    for &(x, y) in webs {
+        execute!(
+            stdout,
+            cursor::MoveTo(x as u16, y as u16),
+            SetForegroundColor(Color::White),
+            Print(":")
         )?;
     }
     Ok(())
@@ -216,18 +253,58 @@ fn process_monsters(
     log: &mut Vec<String>,
     _ground_items: &mut HashMap<(usize, usize), Item>,
     _current_floor: i32,
+    webs: &mut HashSet<(usize, usize)>,
 ) -> std::io::Result<()> {
     let player_pos = (player.x, player.y);
     let all_positions = all_monster_positions(monsters);
+
+    // Collect dead monster indices for Necromancer
+    let dead_indices: Vec<usize> = monsters
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| !m.is_alive() && m.death_pos.is_some())
+        .map(|(i, _)| i)
+        .collect();
 
     for i in 0..monsters.len() {
         if !monsters[i].is_alive() {
             continue;
         }
 
+        // --- Status effect processing ---
+        // Poison: deal 1 damage per tick
+        if monsters[i].poison_ticks > 0 {
+            monsters[i].poison_ticks -= 1;
+            monsters[i].take_damage(1);
+            if !monsters[i].is_alive() {
+                log.push(format!("The {} dies from poison!", monsters[i].name));
+                // XP reward for poison kill
+                let xp = monsters[i].xp_value();
+                let level_msgs = player.gain_xp(xp);
+                log.push(format!("+{} XP", xp));
+                for msg in level_msgs {
+                    log.push(msg);
+                }
+                monsters[i].death_pos = Some((monsters[i].x, monsters[i].y));
+                erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                continue;
+            }
+        }
+        // Stun: skip turn
+        if monsters[i].stun_ticks > 0 {
+            monsters[i].stun_ticks -= 1;
+            continue;
+        }
+        // Freeze: skip turn
+        if monsters[i].freeze_ticks > 0 {
+            monsters[i].freeze_ticks -= 1;
+            continue;
+        }
+
         let occupied = occupied_positions(monsters, i);
         let was_berserk = monsters[i].is_berserk;
-        let action = monsters[i].decide_action(player_pos, map, &occupied, &all_positions);
+        let action =
+            monsters[i].decide_action(player_pos, map, &occupied, &all_positions, &dead_indices);
 
         if monsters[i].is_berserk && !was_berserk {
             log.push("The Troll flies into a rage!".to_string());
@@ -243,6 +320,63 @@ fn process_monsters(
                     let dmg = player.reduce_damage(damage);
                     player.take_damage(dmg);
                     log.push(format!("The {} hits you for {} damage!", name, dmg));
+                }
+            }
+            MonsterAction::PoisonAttack {
+                damage,
+                ref name,
+                poison_ticks,
+            } => {
+                if player.try_dodge() {
+                    log.push(format!("You dodge the {}'s venomous bite!", name));
+                } else {
+                    let dmg = player.reduce_damage(damage);
+                    player.take_damage(dmg);
+                    player.poison_ticks = poison_ticks;
+                    log.push(format!(
+                        "The {} bites you for {} damage! Poison courses through your veins!",
+                        name, dmg
+                    ));
+                }
+            }
+            MonsterAction::DrainAttack { damage, ref name } => {
+                if player.try_dodge() {
+                    log.push(format!("You dodge the {}'s spectral grasp!", name));
+                } else {
+                    let dmg = player.reduce_damage(damage);
+                    player.take_damage(dmg);
+                    let heal = dmg / 2;
+                    monsters[i].hp = (monsters[i].hp + heal).min(monsters[i].max_hp);
+                    log.push(format!(
+                        "The {} drains {} life from you! (heals {})",
+                        name, dmg, heal
+                    ));
+                }
+            }
+            MonsterAction::PlaceWeb(wx, wy) => {
+                if map.is_walkable(wx, wy) {
+                    webs.insert((wx, wy));
+                    // Don't log — spider places webs silently
+                }
+            }
+            MonsterAction::Resurrect(dead_idx) => {
+                if dead_idx < monsters.len() && !monsters[dead_idx].is_alive() {
+                    if let Some((dx, dy)) = monsters[dead_idx].death_pos {
+                        let restore_pct = if monsters[i].floor_tier >= 3 { 75 } else { 50 };
+                        let restored_hp = (monsters[dead_idx].max_hp * restore_pct / 100).max(1);
+                        monsters[dead_idx].hp = restored_hp;
+                        monsters[dead_idx].x = dx;
+                        monsters[dead_idx].y = dy;
+                        monsters[dead_idx].death_pos = None;
+                        monsters[dead_idx].stun_ticks = 0;
+                        monsters[dead_idx].freeze_ticks = 0;
+                        monsters[dead_idx].poison_ticks = 0;
+                        monsters[dead_idx].behavior = monster::BehaviorState::Idle;
+                        log.push(format!(
+                            "The Necromancer raises the {} from the dead!",
+                            monsters[dead_idx].name
+                        ));
+                    }
                 }
             }
             MonsterAction::MoveTo(nx, ny) => {
@@ -261,6 +395,8 @@ fn process_monsters(
                     erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
                     monsters[i].x = nx;
                     monsters[i].y = ny;
+                    // Wraith: exiting wall -> no longer phasing
+                    monsters[i].is_phasing = false;
 
                     // Tier 3 Goblin: second move (speed 2)
                     if matches!(monsters[i].monster_type, monster::MonsterType::Goblin)
@@ -305,9 +441,173 @@ fn process_monsters(
                     }
                 }
             }
+            MonsterAction::MoveToPhase(nx, ny) => {
+                // Wraith phase movement — can go through walls
+                if nx < map.width && ny < map.height {
+                    // Don't move onto player
+                    if nx == player.x && ny == player.y {
+                        // Already handled by adjacent check in AI
+                    } else {
+                        erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                        monsters[i].x = nx;
+                        monsters[i].y = ny;
+                        // Check if now inside a wall
+                        monsters[i].is_phasing = !map.is_walkable(nx, ny);
+                    }
+                }
+            }
             MonsterAction::FireProjectile(proj) => {
                 log.push(format!("The {} fires an arrow!", monsters[i].name));
                 projectiles.push(proj);
+            }
+            MonsterAction::BossSummon => {
+                // Goblin King summons goblin minions near himself
+                let enraged = monsters[i].hp * 100 / monsters[i].max_hp < 50;
+                let count = if enraged { 3 } else { 2 };
+                let bx = monsters[i].x;
+                let by = monsters[i].y;
+                let floor = monsters[i].floor_tier * 3; // approximate floor from tier
+                let mut spawned = 0;
+                let offsets: [(i32, i32); 8] = [
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                    (-1, 0),
+                    (1, 0),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                ];
+                for &(dx, dy) in &offsets {
+                    if spawned >= count {
+                        break;
+                    }
+                    let nx = bx as i32 + dx;
+                    let ny = by as i32 + dy;
+                    if nx >= 0 && ny >= 0 {
+                        let (ux, uy) = (nx as usize, ny as usize);
+                        if ux < map.width
+                            && uy < map.height
+                            && map.is_walkable(ux, uy)
+                            && !(ux == player.x && uy == player.y)
+                        {
+                            let mut blocked = false;
+                            for m in monsters.iter() {
+                                if m.is_alive() && m.x == ux && m.y == uy {
+                                    blocked = true;
+                                    break;
+                                }
+                            }
+                            if !blocked {
+                                let mut goblin = monster::Monster::new(
+                                    ux,
+                                    uy,
+                                    monster::MonsterType::Goblin,
+                                    floor,
+                                );
+                                goblin.can_see_player = true;
+                                goblin.behavior = monster::BehaviorState::Chase;
+                                monsters.push(goblin);
+                                spawned += 1;
+                            }
+                        }
+                    }
+                }
+                if spawned > 0 {
+                    log.push(format!(
+                        "The Goblin King bellows! {} goblins rush to his aid!",
+                        spawned
+                    ));
+                }
+            }
+            MonsterAction::BreathAttack {
+                dx,
+                dy,
+                damage,
+                range,
+            } => {
+                // Bone Dragon breath: line AoE in direction
+                log.push(format!("The Bone Dragon unleashes a torrent of fire!"));
+                let mut cx = monsters[i].x as i32;
+                let mut cy = monsters[i].y as i32;
+                for _ in 0..range {
+                    cx += dx;
+                    cy += dy;
+                    if cx < 0 || cy < 0 || cx >= map.width as i32 || cy >= map.height as i32 {
+                        break;
+                    }
+                    let (ux, uy) = (cx as usize, cy as usize);
+                    if !map.is_walkable(ux, uy) {
+                        break; // Breath stops at walls
+                    }
+                    // Hit player if in the line
+                    if ux == player.x && uy == player.y {
+                        if player.try_dodge() {
+                            log.push("You duck under the dragon's breath!".to_string());
+                        } else {
+                            let dmg = player.reduce_damage(damage);
+                            player.take_damage(dmg);
+                            log.push(format!("Dragon fire engulfs you for {} damage!", dmg));
+                        }
+                    }
+                }
+            }
+            MonsterAction::ShadowPulse { damage, radius } => {
+                // Shadow Lord AoE pulse centered on self
+                let sx = monsters[i].x;
+                let sy = monsters[i].y;
+                let dist_to_player = Map::distance(sx, sy, player.x, player.y);
+                log.push("The Shadow Lord releases a wave of dark energy!".to_string());
+                if dist_to_player <= radius {
+                    if player.try_dodge() {
+                        log.push("You resist the shadow pulse!".to_string());
+                    } else {
+                        let dmg = player.reduce_damage(damage);
+                        player.take_damage(dmg);
+                        log.push(format!("Shadow energy tears at you for {} damage!", dmg));
+                    }
+                }
+            }
+            MonsterAction::BossTeleport => {
+                // Shadow Lord teleports to a random walkable tile near the player
+                let mut rng = rand::rng();
+                let px = player.x;
+                let py = player.y;
+                // Collect valid tiles within 3-6 range of player
+                let mut candidates: Vec<(usize, usize)> = Vec::new();
+                let search = 8;
+                let min_x = (px as i32 - search).max(0) as usize;
+                let max_x = ((px as i32 + search) as usize).min(map.width - 1);
+                let min_y = (py as i32 - search).max(0) as usize;
+                let max_y = ((py as i32 + search) as usize).min(map.height - 1);
+                for tx in min_x..=max_x {
+                    for ty in min_y..=max_y {
+                        let d = Map::distance(tx, ty, px, py);
+                        if d >= 2 && d <= 5 && map.is_walkable(tx, ty) && !(tx == px && ty == py) {
+                            let mut occ = false;
+                            for m in monsters.iter() {
+                                if m.is_alive() && m.x == tx && m.y == ty {
+                                    occ = true;
+                                    break;
+                                }
+                            }
+                            if !occ {
+                                candidates.push((tx, ty));
+                            }
+                        }
+                    }
+                }
+                if !candidates.is_empty() {
+                    let idx = rng.random_range(0..candidates.len());
+                    let (nx, ny) = candidates[idx];
+                    erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                    monsters[i].x = nx;
+                    monsters[i].y = ny;
+                    log.push(
+                        "The Shadow Lord vanishes and reappears in a swirl of darkness!"
+                            .to_string(),
+                    );
+                }
             }
         }
     }
@@ -328,12 +628,13 @@ fn render_ui(
         .as_ref()
         .map_or("Fists".to_string(), |w| w.display_name());
 
-    // Status line 1: Floor, HP, Class, Weapon
+    // Status line 1: Floor, HP, Level, Class, Weapon
     let status = format!(
-        "Floor: {} | HP: {:2}/{:2} | {} | {}",
+        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {}",
         current_floor,
         player.hp,
         player.max_hp,
+        player.level,
         player.class.name(),
         weapon_name
     );
@@ -345,9 +646,24 @@ fn render_ui(
         Print(&status)
     )?;
 
-    // Status line 2: Stats
+    // Status line 2: XP bar + Stats
+    let xp_pct = if player.xp_to_next_level > 0 {
+        (player.xp * 100 / player.xp_to_next_level).min(100)
+    } else {
+        100
+    };
+    let xp_bar_len = 10;
+    let filled = (xp_pct * xp_bar_len / 100) as usize;
+    let xp_bar: String = format!(
+        "[{}{}]",
+        "#".repeat(filled),
+        "-".repeat((xp_bar_len as usize).saturating_sub(filled))
+    );
     let stat_line = format!(
-        "STR:{} DEX:{} INT:{} CON:{} | Def:{} | Tab:Inventory",
+        "XP:{}/{} {} | STR:{} DEX:{} INT:{} CON:{} | Def:{} | Tab:Inv",
+        player.xp,
+        player.xp_to_next_level,
+        xp_bar,
         stats.str_,
         stats.dex,
         stats.int,
@@ -362,11 +678,42 @@ fn render_ui(
         Print(&stat_line)
     )?;
 
-    // Message log (3 lines)
+    // Status line 3: Abilities
+    let a1_text = player
+        .ability_1
+        .as_ref()
+        .map(|a| format!("[1]{}", a.status_text()))
+        .unwrap_or_default();
+    let a2_text = player
+        .ability_2
+        .as_ref()
+        .map(|a| format!("[2]{}", a.status_text()))
+        .unwrap_or_else(|| {
+            if player.level < 5 {
+                "[2]Locked (Lv5)".to_string()
+            } else {
+                String::new()
+            }
+        });
+    let poison_text = if player.poison_ticks > 0 {
+        format!(" | POISONED({})", player.poison_ticks)
+    } else {
+        String::new()
+    };
+    let ability_line = format!("{} {} {}", a1_text, a2_text, poison_text);
+    execute!(
+        stdout,
+        cursor::MoveTo(0, map_height as u16 + 3),
+        SetForegroundColor(Color::Cyan),
+        Clear(ClearType::UntilNewLine),
+        Print(&ability_line)
+    )?;
+
+    // Message log (3 lines) - shifted down by 1 to make room for ability line
     for (i, msg) in log.iter().rev().take(3).enumerate() {
         execute!(
             stdout,
-            cursor::MoveTo(0, map_height as u16 + 3 + i as u16),
+            cursor::MoveTo(0, map_height as u16 + 4 + i as u16),
             SetForegroundColor(Color::Grey),
             Clear(ClearType::UntilNewLine),
             Print(msg)
@@ -441,23 +788,50 @@ fn main() -> std::io::Result<()> {
             let mut monsters = map.spawn_monsters_for_floor(current_floor);
             let mut projectiles: Vec<Projectile> = Vec::new();
             let mut ground_items = map.spawn_ground_items(current_floor);
+            let mut webs: HashSet<(usize, usize)> = HashSet::new();
+            let mut player_web_stuck: i32 = 0; // ticks player is stuck in web
             let mut last_monster_tick = Instant::now();
 
             execute!(stdout, Clear(ClearType::All))?;
             render_map(&mut stdout, &map)?;
             log.push(format!("Welcome to floor {}!", current_floor));
 
+            // Boss floor announcement
+            match current_floor {
+                5 => {
+                    log.push("*** THE GOBLIN KING GUARDS THE WAY! ***".to_string());
+                    log.push("Defeat him to descend deeper...".to_string());
+                }
+                10 => {
+                    log.push("*** THE BONE DRAGON AWAITS! ***".to_string());
+                    log.push("Its fiery breath fills the chamber...".to_string());
+                }
+                15 => {
+                    log.push("*** THE SHADOW LORD HAS COME! ***".to_string());
+                    log.push("Darkness pulses from every corner...".to_string());
+                }
+                _ => {}
+            }
+
             'inner: loop {
                 // --- RENDER ---
                 render_ui(&mut stdout, map_height, current_floor, &player, &log)?;
+                render_webs(&mut stdout, &webs)?;
                 render_ground_items(&mut stdout, &ground_items)?;
                 render_monsters(&mut stdout, &monsters)?;
                 render_projectiles(&mut stdout, &projectiles)?;
 
+                // Render player with buff-aware color
+                let active_p_color = if player.has_damage_buff() {
+                    Color::White // bright flash when Power Attack / Shadow Strike active
+                } else {
+                    p_color
+                };
+
                 execute!(
                     stdout,
                     cursor::MoveTo(player.x as u16, player.y as u16),
-                    SetForegroundColor(p_color),
+                    SetForegroundColor(active_p_color),
                     Print("@"),
                 )?;
                 stdout.flush()?;
@@ -476,6 +850,8 @@ fn main() -> std::io::Result<()> {
 
                         if !repeat_too_fast {
                             last_move_time = now;
+                            let mut ability_dx: i32 = 0;
+                            let mut ability_dy: i32 = 0;
 
                             match key_event.code {
                                 KeyCode::Char('q') | KeyCode::Esc => break 'outer,
@@ -489,23 +865,376 @@ fn main() -> std::io::Result<()> {
                                     last_monster_tick = Instant::now();
                                     continue 'inner;
                                 }
+                                KeyCode::Char('1') => {
+                                    // Activate ability 1
+                                    if let Some(ref mut a) = player.ability_1 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::PowerAttack => {
+                                                    a.activate();
+                                                    log.push("Power Attack ready! Next melee does 2x damage.".to_string());
+                                                }
+                                                AbilityType::ShadowStep
+                                                | AbilityType::ChainLightning => {
+                                                    // Needs directional input
+                                                    player.pending_ability_direction = Some(1);
+                                                    log.push(format!(
+                                                        "{} — choose direction (arrow key).",
+                                                        a.name
+                                                    ));
+                                                }
+                                                _ => {
+                                                    // Instant abilities handled in step 8
+                                                }
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    }
+                                    continue 'inner;
+                                }
+                                KeyCode::Char('2') => {
+                                    // Activate ability 2
+                                    if let Some(ref mut a) = player.ability_2 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::PoisonBlade => {
+                                                    a.activate();
+                                                    log.push("Poison Blade active! Next 3 melee hits apply poison.".to_string());
+                                                }
+                                                AbilityType::WarCry => {
+                                                    // Instant AoE stun — implemented in step 8
+                                                    a.activate();
+                                                    a.is_active = false; // instant, no buff
+                                                                         // Stun all monsters within 4 tiles
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let mut stunned_count = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 4 {
+                                                                m.stun_ticks = 2;
+                                                                stunned_count += 1;
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!(
+                                                        "WAR CRY! {} monsters stunned!",
+                                                        stunned_count
+                                                    ));
+                                                }
+                                                AbilityType::FrostNova => {
+                                                    // Instant AoE freeze + damage — implemented in step 8
+                                                    a.activate();
+                                                    a.is_active = false; // instant
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let frost_dmg =
+                                                        2 + player.effective_stats().potion_bonus(); // INT-based
+                                                    let mut frozen_count = 0;
+                                                    let mut frost_kills: Vec<(usize, usize, i32)> =
+                                                        Vec::new(); // (x, y, xp)
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 3 {
+                                                                m.freeze_ticks = 2;
+                                                                m.take_damage(frost_dmg);
+                                                                frozen_count += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    frost_kills.push((
+                                                                        m.x,
+                                                                        m.y,
+                                                                        m.xp_value(),
+                                                                    ));
+                                                                    log.push(format!(
+                                                                        "The {} shatters!",
+                                                                        m.name
+                                                                    ));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("FROST NOVA! {} monsters frozen for {} damage!", frozen_count, frost_dmg));
+                                                    for (kx, ky, xp) in frost_kills {
+                                                        erase_entity(&mut stdout, &map, kx, ky)?;
+                                                        let level_msgs = player.gain_xp(xp);
+                                                        log.push(format!("+{} XP", xp));
+                                                        for msg in level_msgs {
+                                                            log.push(msg);
+                                                        }
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if let Some(ref a) = player.ability_2 {
+                                            if a.cooldown_remaining > 0 {
+                                                log.push(format!(
+                                                    "{} on cooldown ({} ticks).",
+                                                    a.name, a.cooldown_remaining
+                                                ));
+                                            }
+                                        }
+                                    } else {
+                                        log.push(
+                                            "No second ability yet (unlocks at level 5)."
+                                                .to_string(),
+                                        );
+                                    }
+                                    continue 'inner;
+                                }
                                 KeyCode::Up => {
-                                    if next_y > 0 {
+                                    if player.pending_ability_direction.is_some() {
+                                        ability_dx = 0;
+                                        ability_dy = -1;
+                                    } else if next_y > 0 {
                                         next_y -= 1;
                                     }
                                 }
                                 KeyCode::Down => {
-                                    next_y += 1;
+                                    if player.pending_ability_direction.is_some() {
+                                        ability_dx = 0;
+                                        ability_dy = 1;
+                                    } else {
+                                        next_y += 1;
+                                    }
                                 }
                                 KeyCode::Left => {
-                                    if next_x > 0 {
+                                    if player.pending_ability_direction.is_some() {
+                                        ability_dx = -1;
+                                        ability_dy = 0;
+                                    } else if next_x > 0 {
                                         next_x -= 1;
                                     }
                                 }
                                 KeyCode::Right => {
-                                    next_x += 1;
+                                    if player.pending_ability_direction.is_some() {
+                                        ability_dx = 1;
+                                        ability_dy = 0;
+                                    } else {
+                                        next_x += 1;
+                                    }
                                 }
-                                _ => {}
+                                _ => {
+                                    // Any other key cancels pending ability direction
+                                    if player.pending_ability_direction.is_some() {
+                                        player.pending_ability_direction = None;
+                                        log.push("Ability cancelled.".to_string());
+                                    }
+                                }
+                            }
+
+                            // --- DIRECTIONAL ABILITY EXECUTION ---
+                            if let Some(slot) = player.pending_ability_direction {
+                                if ability_dx != 0 || ability_dy != 0 {
+                                    player.pending_ability_direction = None;
+
+                                    let ability_ref = if slot == 1 {
+                                        &player.ability_1
+                                    } else {
+                                        &player.ability_2
+                                    };
+
+                                    if let Some(a) = ability_ref {
+                                        match a.ability_type {
+                                            AbilityType::ShadowStep => {
+                                                // Teleport up to 4 tiles in direction, stop at walls
+                                                erase_entity(
+                                                    &mut stdout,
+                                                    &map,
+                                                    player.x,
+                                                    player.y,
+                                                )?;
+                                                let mut land_x = player.x as i32;
+                                                let mut land_y = player.y as i32;
+                                                for _ in 1..=4 {
+                                                    let tx = land_x + ability_dx;
+                                                    let ty = land_y + ability_dy;
+                                                    if tx < 0
+                                                        || ty < 0
+                                                        || tx as usize >= map.width
+                                                        || ty as usize >= map.height
+                                                    {
+                                                        break;
+                                                    }
+                                                    if !map.is_walkable(tx as usize, ty as usize) {
+                                                        break;
+                                                    }
+                                                    land_x = tx;
+                                                    land_y = ty;
+                                                }
+                                                player.x = land_x as usize;
+                                                player.y = land_y as usize;
+
+                                                // Check if any monster adjacent to landing = shadow strike buff
+                                                let mut adjacent_monster = false;
+                                                for m in monsters.iter() {
+                                                    if m.is_alive() {
+                                                        let d = Map::distance(
+                                                            player.x, player.y, m.x, m.y,
+                                                        );
+                                                        if d == 1 {
+                                                            adjacent_monster = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Activate the ability (puts it on cooldown + sets buff)
+                                                if slot == 1 {
+                                                    if let Some(ref mut a) = player.ability_1 {
+                                                        a.activate();
+                                                        if !adjacent_monster {
+                                                            a.is_active = false;
+                                                            // no buff if no adjacent enemy
+                                                        }
+                                                    }
+                                                } else {
+                                                    if let Some(ref mut a) = player.ability_2 {
+                                                        a.activate();
+                                                        if !adjacent_monster {
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                }
+
+                                                if adjacent_monster {
+                                                    log.push("Shadow Step! Shadow strike ready — next melee does 2x damage!".to_string());
+                                                } else {
+                                                    log.push("Shadow Step!".to_string());
+                                                }
+                                            }
+                                            AbilityType::ChainLightning => {
+                                                // Fire lightning up to 6 tiles, chain to nearby monsters
+                                                let int_mod =
+                                                    player.effective_stats().potion_bonus(); // INT-based modifier
+                                                let damages =
+                                                    [3 + int_mod, 2 + int_mod, 1 + int_mod];
+                                                let mut hit_indices: Vec<usize> = Vec::new();
+
+                                                // Find first monster in line
+                                                let mut cx = player.x as i32;
+                                                let mut cy = player.y as i32;
+                                                for _ in 1..=6 {
+                                                    cx += ability_dx;
+                                                    cy += ability_dy;
+                                                    if cx < 0
+                                                        || cy < 0
+                                                        || cx as usize >= map.width
+                                                        || cy as usize >= map.height
+                                                    {
+                                                        break;
+                                                    }
+                                                    if map.tiles[cx as usize][cy as usize]
+                                                        == Tile::Wall
+                                                    {
+                                                        break;
+                                                    }
+                                                    // Check for monster at this position
+                                                    for (mi, m) in monsters.iter().enumerate() {
+                                                        if m.is_alive()
+                                                            && m.x == cx as usize
+                                                            && m.y == cy as usize
+                                                        {
+                                                            hit_indices.push(mi);
+                                                            break;
+                                                        }
+                                                    }
+                                                    if !hit_indices.is_empty() {
+                                                        break; // found first target
+                                                    }
+                                                }
+
+                                                // Chain: find nearest monster within 3 tiles of last hit
+                                                for chain in 1..=2 {
+                                                    if hit_indices.len() < chain {
+                                                        break;
+                                                    }
+                                                    let last_mi = hit_indices[chain - 1];
+                                                    let lx = monsters[last_mi].x;
+                                                    let ly = monsters[last_mi].y;
+
+                                                    let mut best_mi: Option<usize> = None;
+                                                    let mut best_dist = i32::MAX;
+                                                    for (mi, m) in monsters.iter().enumerate() {
+                                                        if m.is_alive()
+                                                            && !hit_indices.contains(&mi)
+                                                        {
+                                                            let d = Map::distance(lx, ly, m.x, m.y);
+                                                            if d <= 3 && d < best_dist {
+                                                                best_dist = d;
+                                                                best_mi = Some(mi);
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(mi) = best_mi {
+                                                        hit_indices.push(mi);
+                                                    }
+                                                }
+
+                                                // Apply damage
+                                                if hit_indices.is_empty() {
+                                                    log.push(
+                                                        "Chain Lightning fizzles — no targets hit."
+                                                            .to_string(),
+                                                    );
+                                                } else {
+                                                    for (i, &mi) in hit_indices.iter().enumerate() {
+                                                        let dmg = damages[i.min(2)];
+                                                        monsters[mi].take_damage(dmg);
+                                                        log.push(format!(
+                                                            "Lightning strikes {} for {} damage!",
+                                                            monsters[mi].name, dmg
+                                                        ));
+                                                        if !monsters[mi].is_alive() {
+                                                            monsters[mi].death_pos = Some((
+                                                                monsters[mi].x,
+                                                                monsters[mi].y,
+                                                            ));
+                                                            log.push(format!(
+                                                                "The {} dies!",
+                                                                monsters[mi].name
+                                                            ));
+                                                            // XP reward
+                                                            let xp = monsters[mi].xp_value();
+                                                            let level_msgs = player.gain_xp(xp);
+                                                            log.push(format!("+{} XP", xp));
+                                                            for msg in level_msgs {
+                                                                log.push(msg);
+                                                            }
+                                                            erase_entity(
+                                                                &mut stdout,
+                                                                &map,
+                                                                monsters[mi].x,
+                                                                monsters[mi].y,
+                                                            )?;
+                                                        }
+                                                    }
+                                                }
+
+                                                // Put on cooldown
+                                                if slot == 1 {
+                                                    if let Some(ref mut a) = player.ability_1 {
+                                                        a.activate();
+                                                        a.is_active = false; // instant, no buff
+                                                    }
+                                                } else {
+                                                    if let Some(ref mut a) = player.ability_2 {
+                                                        a.activate();
+                                                        a.is_active = false;
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                    continue 'inner;
+                                }
                             }
 
                             // Only process if position changed
@@ -523,53 +1252,147 @@ fn main() -> std::io::Result<()> {
                                 }
 
                                 if let Some(i) = monster_index {
-                                    let damage = player.melee_damage();
-                                    monsters[i].take_damage(damage);
-                                    log.push(format!(
-                                        "You hit the {} for {} damage!",
-                                        monsters[i].name, damage
-                                    ));
-                                    if !monsters[i].is_alive() {
-                                        log.push(format!("The {} dies!", monsters[i].name));
-                                        let death_pos = (monsters[i].x, monsters[i].y);
-                                        erase_entity(&mut stdout, &map, death_pos.0, death_pos.1)?;
+                                    // Wraith invulnerability: can't hit a phasing wraith
+                                    if monsters[i].is_phasing {
+                                        log.push(format!(
+                                            "Your attack passes through the {}!",
+                                            monsters[i].name
+                                        ));
+                                    // Bat Swarm dodge: 25% chance at tier 2+
+                                    } else if monsters[i].can_dodge_attack() {
+                                        log.push(format!(
+                                            "The {} dodges your attack!",
+                                            monsters[i].name
+                                        ));
+                                    } else {
+                                        let mut damage = player.melee_damage();
 
-                                        // Monster drop (~30%)
-                                        let mut rng = rand::rng();
-                                        if rng.random_range(0..100) < 30 {
-                                            let drop = items::random_drop(current_floor);
+                                        // Power Attack / Shadow Strike buff: 2x damage
+                                        if player.has_damage_buff() {
+                                            damage *= 2;
+                                            player.consume_damage_buff();
+                                            log.push("Critical strike!".to_string());
+                                        }
+
+                                        monsters[i].take_damage(damage);
+                                        log.push(format!(
+                                            "You hit the {} for {} damage!",
+                                            monsters[i].name, damage
+                                        ));
+
+                                        // Poison Blade buff: apply poison on hit
+                                        if player.has_poison_buff() {
+                                            monsters[i].poison_ticks = 3;
+                                            player.consume_poison_buff();
                                             log.push(format!(
-                                                "The {} drops a {}!",
-                                                monsters[i].name,
-                                                drop.display_name()
+                                                "The {} is poisoned!",
+                                                monsters[i].name
                                             ));
-                                            ground_items.insert(death_pos, drop);
+                                        }
+
+                                        if !monsters[i].is_alive() {
+                                            log.push(format!("The {} dies!", monsters[i].name));
+                                            monsters[i].death_pos =
+                                                Some((monsters[i].x, monsters[i].y));
+                                            let dpos = (monsters[i].x, monsters[i].y);
+                                            erase_entity(&mut stdout, &map, dpos.0, dpos.1)?;
+
+                                            // XP reward
+                                            let xp = monsters[i].xp_value();
+                                            let level_msgs = player.gain_xp(xp);
+                                            log.push(format!("+{} XP", xp));
+                                            for msg in level_msgs {
+                                                log.push(msg);
+                                            }
+
+                                            // Monster drop (~30%)
+                                            let mut rng = rand::rng();
+                                            if rng.random_range(0..100) < 30 {
+                                                let drop = items::random_drop(current_floor);
+                                                log.push(format!(
+                                                    "The {} drops a {}!",
+                                                    monsters[i].name,
+                                                    drop.display_name()
+                                                ));
+                                                ground_items.insert(dpos, drop);
+                                            }
+
+                                            // Boss kill celebration + guaranteed loot
+                                            if monsters[i].is_boss {
+                                                log.push("*** BOSS DEFEATED! ***".to_string());
+                                                log.push("The stairs are unsealed!".to_string());
+                                                // Guaranteed high-tier drop
+                                                let boss_drop =
+                                                    items::random_drop(current_floor + 3);
+                                                log.push(format!(
+                                                    "The {} drops a powerful {}!",
+                                                    monsters[i].name,
+                                                    boss_drop.display_name()
+                                                ));
+                                                // Place adjacent to death spot if taken
+                                                let bx = if dpos.0 + 1 < map.width {
+                                                    dpos.0 + 1
+                                                } else {
+                                                    dpos.0.saturating_sub(1)
+                                                };
+                                                ground_items.insert((bx, dpos.1), boss_drop);
+                                            }
                                         }
                                     }
                                 } else if map.is_walkable(next_x, next_y) {
                                     // --- PLAYER MOVEMENT ---
                                     erase_entity(&mut stdout, &map, player.x, player.y)?;
 
-                                    player.x = next_x;
-                                    player.y = next_y;
+                                    // Web stuck: skip movement if player is stuck
+                                    if player_web_stuck > 0 {
+                                        log.push(format!(
+                                            "You struggle against the web! ({} ticks)",
+                                            player_web_stuck
+                                        ));
+                                    } else {
+                                        player.x = next_x;
+                                        player.y = next_y;
 
-                                    // Check stairs
-                                    if map.tiles[player.x][player.y] == Tile::Stairs {
-                                        current_floor += 1;
-                                        continue 'floor_loop;
-                                    }
+                                        // Check if player stepped on a web
+                                        if webs.remove(&(player.x, player.y)) {
+                                            player_web_stuck = 2;
+                                            log.push(
+                                                "You walk into a web! You're stuck!".to_string(),
+                                            );
+                                        }
 
-                                    // Check ground item pickup
-                                    let pos = (player.x, player.y);
-                                    if let Some(item) = ground_items.get(&pos).cloned() {
-                                        if player.add_to_inventory(item.clone()) {
-                                            log.push(format!(
-                                                "You pick up a {}!",
-                                                item.display_name()
-                                            ));
-                                            ground_items.remove(&pos);
-                                        } else {
-                                            log.push("Your inventory is full!".to_string());
+                                        // Check stairs
+                                        if map.tiles[player.x][player.y] == Tile::Stairs {
+                                            // Block descent if a boss is alive
+                                            let boss_alive =
+                                                monsters.iter().any(|m| m.is_boss && m.is_alive());
+                                            if boss_alive {
+                                                log.push("The stairs are sealed by a dark power! Defeat the boss first!".to_string());
+                                            } else {
+                                                current_floor += 1;
+                                                // XP for descending
+                                                let floor_xp = current_floor * 5;
+                                                let level_msgs = player.gain_xp(floor_xp);
+                                                log.push(format!("You descend! +{} XP", floor_xp));
+                                                for msg in level_msgs {
+                                                    log.push(msg);
+                                                }
+                                                continue 'floor_loop;
+                                            }
+                                        }
+
+                                        // Check ground item pickup
+                                        let pos = (player.x, player.y);
+                                        if let Some(item) = ground_items.get(&pos).cloned() {
+                                            if player.add_to_inventory(item.clone()) {
+                                                log.push(format!(
+                                                    "You pick up a {}!",
+                                                    item.display_name()
+                                                ));
+                                                ground_items.remove(&pos);
+                                            } else {
+                                                log.push("Your inventory is full!".to_string());
+                                            }
                                         }
                                     }
                                 }
@@ -582,6 +1405,24 @@ fn main() -> std::io::Result<()> {
                 let now = Instant::now();
                 if now.duration_since(last_monster_tick) >= Duration::from_millis(MONSTER_TICK_MS) {
                     last_monster_tick = now;
+
+                    // Tick player ability cooldowns
+                    player.tick_abilities();
+
+                    // Decrement web stuck counter
+                    if player_web_stuck > 0 {
+                        player_web_stuck -= 1;
+                        if player_web_stuck == 0 {
+                            log.push("You break free from the web!".to_string());
+                        }
+                    }
+
+                    // Player poison tick
+                    if player.poison_ticks > 0 {
+                        player.poison_ticks -= 1;
+                        player.take_damage(1);
+                        log.push("Poison burns in your veins! (-1 HP)".to_string());
+                    }
 
                     process_projectiles(
                         &mut stdout,
@@ -601,6 +1442,7 @@ fn main() -> std::io::Result<()> {
                         &mut log,
                         &mut ground_items,
                         current_floor,
+                        &mut webs,
                     )?;
                 }
 

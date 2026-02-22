@@ -164,11 +164,79 @@ impl Map {
 
     pub fn spawn_monsters_for_floor(&self, floor: i32) -> Vec<crate::monster::Monster> {
         let mut monsters = Vec::new();
+        let mut rng = rand::rng();
         // Skip rooms[0] (player spawn) and rooms.last() (stairs spawn)
         for i in 1..self.rooms.len().saturating_sub(1) {
-            let (x, y) = self.rooms[i].center();
-            monsters.push(crate::monster::Monster::random_monster(x, y, floor));
+            let (cx, cy) = self.rooms[i].center();
+            let m = crate::monster::Monster::random_monster(cx, cy, floor);
+            if m.monster_type == crate::monster::MonsterType::BatSwarm {
+                // Bat Swarms spawn in groups of 2-3
+                let count = rng.random_range(2..=3);
+                let room = &self.rooms[i];
+                for j in 0..count {
+                    // Offset each bat within the room
+                    let ox = match j {
+                        0 => 0,
+                        1 => {
+                            if cx + 1 < room.x2 {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                        _ => {
+                            if cy + 1 < room.y2 {
+                                0
+                            } else {
+                                0
+                            }
+                        }
+                    };
+                    let oy = match j {
+                        0 => 0,
+                        1 => 0,
+                        _ => {
+                            if cy + 1 < room.y2 {
+                                1
+                            } else {
+                                0
+                            }
+                        }
+                    };
+                    let bx = (cx + ox).min(room.x2 - 1);
+                    let by = (cy + oy).min(room.y2 - 1);
+                    monsters.push(crate::monster::Monster::new(
+                        bx,
+                        by,
+                        crate::monster::MonsterType::BatSwarm,
+                        floor,
+                    ));
+                }
+            } else {
+                monsters.push(m);
+            }
         }
+
+        // Spawn boss on boss floors (near the stairs in the last room)
+        let boss_type = match floor {
+            5 => Some(crate::monster::MonsterType::GoblinKing),
+            10 => Some(crate::monster::MonsterType::BoneDragon),
+            15 => Some(crate::monster::MonsterType::ShadowLord),
+            _ => None,
+        };
+        if let Some(bt) = boss_type {
+            if let Some(last_room) = self.rooms.last() {
+                let (cx, cy) = last_room.center();
+                // Offset boss 1 tile from stairs so they don't overlap
+                let bx = if cx + 1 < last_room.x2 {
+                    cx + 1
+                } else {
+                    cx.saturating_sub(1)
+                };
+                monsters.push(crate::monster::Monster::new(bx, cy, bt, floor));
+            }
+        }
+
         monsters
     }
 

@@ -1,5 +1,68 @@
 # Ironveil Development Changelog
 
+## Phase 4: The World Has Rules
+*Completed: 2026-02-22*
+
+### 4.9 HUD Overhaul
+- Status line 1 now shows Level alongside Floor, HP, Class, and Weapon.
+- New XP bar with progress indicator: `XP:42/120 [###-------]`.
+- New ability status line: `[1]Power Attack (Ready) [2]Locked (Lv5)` with cooldown display.
+- Player poison status shown when active: `POISONED(3)`.
+- Message log shifted to accommodate the ability status line.
+
+### 4.8 Boss System — Three Unique Bosses
+- **Goblin King** (Floor 5): Symbol `K` gold. 60 HP, 5 ATK. Summons 2 goblin minions every 4 ticks (3 when enraged). Enrages at <50% HP for +2 damage. 150 XP.
+- **Bone Dragon** (Floor 10): Symbol `D` dark red. 100 HP, 6 ATK. Breath attack: line AoE dealing 8 damage, range 3 (5 when enraged). Slow movement (every 2 ticks). Enrages at <50%: breath fires every 2 ticks. 300 XP.
+- **Shadow Lord** (Floor 15): Symbol `S` magenta. 120 HP, 5 ATK. Teleports every 3 ticks (2 when enraged). Drain attack heals for half damage dealt. Shadow Pulse AoE: 3 damage in radius 2 (radius 3 when enraged). 500 XP.
+- Bosses block stairs until defeated: "The stairs are sealed by a dark power!"
+- Boss floor announcements on entry with dramatic messages.
+- Boss death celebration: "*** BOSS DEFEATED! ***" with guaranteed high-tier loot drop.
+- Bosses spawn in the stairs room, offset from stairs tile.
+
+### 4.7 Player Poison System
+- Added `poison_ticks` field to Player struct.
+- Spider's PoisonAttack now applies poison to the player.
+- Poison deals 1 HP damage per monster tick, decrements each tick.
+- Poison status shown in HUD ability line.
+
+### 4.6 Web Stuck Mechanic
+- Spider webs rendered as `:` in White via `HashSet<(usize,usize)>`.
+- Player stepping on a web consumes it and sets 2-tick stuck duration.
+- While stuck, player movement is blocked but abilities still work.
+- Web stuck counter decrements on monster tick; "You break free!" on expiry.
+
+### 4.5 Bat Swarm Group Spawning
+- Bat Swarms now spawn in groups of 2-3 per room instead of solo.
+- Each bat offset within the room to avoid stacking.
+
+### 4.4 Four New Monster Types
+- **Bat Swarm** (`b` DarkYellow): Fast (every tick), 30% erratic movement, 25% dodge at tier 2+. HP 4, ATK 1. 15 XP.
+- **Spider** (`x` DarkMagenta): Ambush predator (waits until player within 4 tiles). Places webs at 3-5 tile distance. Poison bite at tier 2+. HP 8, ATK 3. 15 XP.
+- **Wraith** (`W` DarkCyan): Phases through walls, invisible while inside walls, invulnerable while phasing. Drain attack heals for half damage. Retreats into walls. HP 12, ATK 5. 30 XP.
+- **Necromancer** (`N` DarkRed): Coward (flees if < 6 tiles). Resurrects dead monsters at 50% HP (75% at tier 3). Max 3 resurrections (5 at tier 3). HP 8, ATK 2. 50 XP.
+- Monster spawn table scales with floor depth (Goblins only on floor 1 → full roster by floor 6+).
+
+### 4.3 Monster Status Effects
+- `stun_ticks`: Skip turn, rendered DarkGrey (applied by WarCry ability).
+- `freeze_ticks`: Skip turn, rendered Cyan (applied by Frost Nova ability).
+- `poison_ticks`: 1 damage/tick, rendered Green (applied by Poison Blade ability).
+- Status effects decrement each monster tick. Poison kills grant XP.
+
+### 4.2 XP & Leveling System
+- XP gained from: monster kills (melee, ability, poison), floor descent (floor * 5 XP).
+- 10 levels with escalating thresholds: 50, 120, 220, 360, 540, 780, 1080, 1440, 1900.
+- Level-up grants: +3 max HP, class-specific stat boosts (+1 primary stat every 2 levels).
+- Cooldown reduction at levels 3 and 7 (-1 tick on ability cooldowns).
+- Second ability unlocks at level 5.
+
+### 4.1 Class Ability System
+- **Warrior**: [1] Power Attack — 2x melee damage on next hit (6 tick cooldown). [2] War Cry — stuns all monsters within 4 tiles for 2 ticks (8 tick cooldown, unlocks Lv5).
+- **Rogue**: [1] Shadow Step — teleport up to 4 tiles in a direction, shadow strike buff if monster adjacent at landing (5 tick cooldown). [2] Poison Blade — next 3 melee hits apply 3 ticks of poison (7 tick cooldown, unlocks Lv5).
+- **Mage**: [1] Chain Lightning — fires 6 tiles, hits first monster for 3+INT damage, chains to 2 more nearby for decreasing damage (6 tick cooldown). [2] Frost Nova — freezes all monsters within 3 tiles for 2 ticks + INT-based damage (8 tick cooldown, unlocks Lv5).
+- Two-step direction input: Press `1`/`2` to ready, then arrow key for direction (or any other key to cancel).
+- Instant-activation abilities (Power Attack, War Cry, Poison Blade, Frost Nova) trigger immediately on `1`/`2`.
+- Cooldowns tick on the 500ms monster tick. Status shown in HUD.
+
 ## Phase 3: You Have an Identity
 *Completed: 2026-02-22*
 
