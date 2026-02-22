@@ -411,7 +411,7 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
                     _ => "[equip]",
                 };
                 let line = format!(
-                    "|    {}) {:<26} {:>6}|",
+                    "|    {}) {:<24} {:>8}|",
                     letter,
                     item.display_name(),
                     action_hint
@@ -428,7 +428,7 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
 
         let footer = format!(
             "|{:^width$}|",
-            "[a-j] Use/Equip  |  Tab/Esc Close",
+            "[a-j] Use/Equip  [A-J] Drop  Esc Close",
             width = box_w - 2
         );
         draw(&mut stdout, row, &footer, Color::Grey)?;
@@ -457,6 +457,14 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
                                 changed = true;
                             }
                         }
+                    }
+                }
+                // Uppercase A-J: drop/destroy item from inventory
+                KeyCode::Char(c) if c >= 'A' && c <= 'J' => {
+                    let index = (c as u8 - b'A') as usize;
+                    if index < player.inventory.len() {
+                        player.inventory.remove(index);
+                        changed = true;
                     }
                 }
                 _ => {}
