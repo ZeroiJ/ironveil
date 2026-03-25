@@ -1,11 +1,12 @@
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 
 use crate::map::Map;
 use crate::projectile::Projectile;
 
 // --- Behavior States ---
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum BehaviorState {
     Idle,       // Wander randomly. Haven't spotted player.
     Chase,      // A* pathfind toward the player.
@@ -15,7 +16,7 @@ pub enum BehaviorState {
     Reposition, // Move to a better tactical spot (Skeleton: keep distance).
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum MonsterType {
     Goblin,
     Skeleton,
@@ -27,6 +28,30 @@ pub enum MonsterType {
     GoblinKing,
     BoneDragon,
     ShadowLord,
+    // Undead
+    Zombie,
+    Ghoul,
+    Specter,
+    // Demons
+    Imp,
+    Demon,
+    Hellfire,
+    // Beasts
+    Minotaur,
+    Bear,
+    WolfPack,
+    // Humanoids
+    Orc,
+    Bandit,
+    Assassin,
+    // Elementals
+    FireElemental,
+    EarthElemental,
+    IceElemental,
+    // Constructs
+    Golem,
+    Sentry,
+    Bomber,
 }
 
 // --- Monster Action: what the monster decided to do this turn ---
@@ -69,6 +94,7 @@ pub enum MonsterAction {
 
 // --- Monster Struct ---
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Monster {
     pub x: usize,
     pub y: usize,
@@ -392,6 +418,516 @@ impl Monster {
                 is_boss: true,
                 boss_tick: 0,
             },
+            // Undead
+            MonsterType::Zombie => Self {
+                x,
+                y,
+                symbol: 'z',
+                name: "Zombie".to_string(),
+                hp: 12,
+                max_hp: 12,
+                attack: 3,
+                base_attack: 3,
+                monster_type: MonsterType::Zombie,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Ghoul => Self {
+                x,
+                y,
+                symbol: 'G',
+                name: "Ghoul".to_string(),
+                hp: 8,
+                max_hp: 8,
+                attack: 5,
+                base_attack: 5,
+                monster_type: MonsterType::Ghoul,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Specter => Self {
+                x,
+                y,
+                symbol: 'p',
+                name: "Specter".to_string(),
+                hp: 6,
+                max_hp: 6,
+                attack: 7,
+                base_attack: 7,
+                monster_type: MonsterType::Specter,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            // Demons
+            MonsterType::Imp => Self {
+                x,
+                y,
+                symbol: 'i',
+                name: "Imp".to_string(),
+                hp: 7,
+                max_hp: 7,
+                attack: 4,
+                base_attack: 4,
+                monster_type: MonsterType::Imp,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Demon => Self {
+                x,
+                y,
+                symbol: 'D',
+                name: "Demon".to_string(),
+                hp: 18,
+                max_hp: 18,
+                attack: 6,
+                base_attack: 6,
+                monster_type: MonsterType::Demon,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Hellfire => Self {
+                x,
+                y,
+                symbol: 'f',
+                name: "Hellfire Elemental".to_string(),
+                hp: 12,
+                max_hp: 12,
+                attack: 5,
+                base_attack: 5,
+                monster_type: MonsterType::Hellfire,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            // Beasts
+            MonsterType::Minotaur => Self {
+                x,
+                y,
+                symbol: 'M',
+                name: "Minotaur".to_string(),
+                hp: 25,
+                max_hp: 25,
+                attack: 8,
+                base_attack: 8,
+                monster_type: MonsterType::Minotaur,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Bear => Self {
+                x,
+                y,
+                symbol: 'B',
+                name: "Bear".to_string(),
+                hp: 15,
+                max_hp: 15,
+                attack: 4,
+                base_attack: 4,
+                monster_type: MonsterType::Bear,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::WolfPack => Self {
+                x,
+                y,
+                symbol: 'w',
+                name: "Wolf".to_string(),
+                hp: 6,
+                max_hp: 6,
+                attack: 3,
+                base_attack: 3,
+                monster_type: MonsterType::WolfPack,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            // Humanoids
+            MonsterType::Orc => Self {
+                x,
+                y,
+                symbol: 'O',
+                name: "Orc".to_string(),
+                hp: 14,
+                max_hp: 14,
+                attack: 5,
+                base_attack: 5,
+                monster_type: MonsterType::Orc,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Bandit => Self {
+                x,
+                y,
+                symbol: 'b',
+                name: "Bandit".to_string(),
+                hp: 7,
+                max_hp: 7,
+                attack: 4,
+                base_attack: 4,
+                monster_type: MonsterType::Bandit,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Assassin => Self {
+                x,
+                y,
+                symbol: 'a',
+                name: "Assassin".to_string(),
+                hp: 6,
+                max_hp: 6,
+                attack: 9,
+                base_attack: 9,
+                monster_type: MonsterType::Assassin,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            // Elementals
+            MonsterType::FireElemental => Self {
+                x,
+                y,
+                symbol: 'F',
+                name: "Fire Elemental".to_string(),
+                hp: 10,
+                max_hp: 10,
+                attack: 5,
+                base_attack: 5,
+                monster_type: MonsterType::FireElemental,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::EarthElemental => Self {
+                x,
+                y,
+                symbol: 'E',
+                name: "Earth Elemental".to_string(),
+                hp: 20,
+                max_hp: 20,
+                attack: 5,
+                base_attack: 5,
+                monster_type: MonsterType::EarthElemental,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::IceElemental => Self {
+                x,
+                y,
+                symbol: 'I',
+                name: "Ice Elemental".to_string(),
+                hp: 12,
+                max_hp: 12,
+                attack: 4,
+                base_attack: 4,
+                monster_type: MonsterType::IceElemental,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            // Constructs
+            MonsterType::Golem => Self {
+                x,
+                y,
+                symbol: 'G',
+                name: "Golem".to_string(),
+                hp: 40,
+                max_hp: 40,
+                attack: 3,
+                base_attack: 3,
+                monster_type: MonsterType::Golem,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 1,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Sentry => Self {
+                x,
+                y,
+                symbol: 's',
+                name: "Sentry".to_string(),
+                hp: 10,
+                max_hp: 10,
+                attack: 6,
+                base_attack: 6,
+                monster_type: MonsterType::Sentry,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
+            MonsterType::Bomber => Self {
+                x,
+                y,
+                symbol: 'o',
+                name: "Bomber".to_string(),
+                hp: 8,
+                max_hp: 8,
+                attack: 10,
+                base_attack: 10,
+                monster_type: MonsterType::Bomber,
+                behavior: BehaviorState::Idle,
+                can_see_player: false,
+                last_known_player_pos: None,
+                ranged_cooldown: 0,
+                turn_parity: 0,
+                floor_tier,
+                is_berserk: false,
+                stun_ticks: 0,
+                freeze_ticks: 0,
+                poison_ticks: 0,
+                web_cooldown: 0,
+                summon_count: 0,
+                summon_max: 0,
+                is_phasing: false,
+                death_pos: None,
+                is_boss: false,
+                boss_tick: 0,
+            },
         }
     }
 
@@ -436,22 +972,49 @@ impl Monster {
             } else {
                 MonsterType::Troll
             }
-        } else {
-            // Floor 6+: everything, necromancer appears
-            if roll < 15 {
+        } else if floor <= 8 {
+            // Floors 6-8: add zombies and ghouls
+            if roll < 12 {
                 MonsterType::Goblin
-            } else if roll < 25 {
+            } else if roll < 22 {
                 MonsterType::BatSwarm
-            } else if roll < 35 {
+            } else if roll < 32 {
                 MonsterType::Spider
-            } else if roll < 50 {
+            } else if roll < 42 {
                 MonsterType::Skeleton
-            } else if roll < 65 {
+            } else if roll < 52 {
                 MonsterType::Wraith
-            } else if roll < 80 {
+            } else if roll < 62 {
                 MonsterType::Troll
-            } else {
+            } else if roll < 75 {
                 MonsterType::Necromancer
+            } else if roll < 85 {
+                MonsterType::Zombie
+            } else {
+                MonsterType::Ghoul
+            }
+        } else {
+            // Floor 9+: everything including specters
+            if roll < 10 {
+                MonsterType::Goblin
+            } else if roll < 18 {
+                MonsterType::BatSwarm
+            } else if roll < 26 {
+                MonsterType::Spider
+            } else if roll < 36 {
+                MonsterType::Skeleton
+            } else if roll < 46 {
+                MonsterType::Wraith
+            } else if roll < 56 {
+                MonsterType::Troll
+            } else if roll < 66 {
+                MonsterType::Necromancer
+            } else if roll < 76 {
+                MonsterType::Zombie
+            } else if roll < 86 {
+                MonsterType::Ghoul
+            } else {
+                MonsterType::Specter
             }
         };
         Self::new(x, y, m_type, floor)
@@ -478,6 +1041,28 @@ impl Monster {
             MonsterType::GoblinKing => 150,
             MonsterType::BoneDragon => 300,
             MonsterType::ShadowLord => 500,
+            MonsterType::Zombie => 18,
+            MonsterType::Ghoul => 22,
+            MonsterType::Specter => 35,
+            // Demons
+            MonsterType::Imp => 25,
+            MonsterType::Demon => 45,
+            MonsterType::Hellfire => 38,
+            MonsterType::Minotaur => 60,
+            MonsterType::Bear => 45,
+            MonsterType::WolfPack => 20,
+            // Humanoids
+            MonsterType::Orc => 30,
+            MonsterType::Bandit => 25,
+            MonsterType::Assassin => 55,
+            // Elementals
+            MonsterType::FireElemental => 40,
+            MonsterType::EarthElemental => 50,
+            MonsterType::IceElemental => 40,
+            // Constructs
+            MonsterType::Golem => 70,
+            MonsterType::Sentry => 35,
+            MonsterType::Bomber => 30,
         }
     }
 
@@ -553,6 +1138,42 @@ impl Monster {
                 self.bone_dragon_ai(player_pos, map, occupied, adjacent, dist)
             }
             MonsterType::ShadowLord => self.shadow_lord_ai(player_pos, map, adjacent, dist),
+            // Undead
+            MonsterType::Zombie => {
+                self.zombie_ai(player_pos, map, occupied, adjacent, low_hp, dist)
+            }
+            MonsterType::Ghoul => self.ghoul_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::Specter => self.specter_ai(player_pos, map, occupied, adjacent, dist),
+            // Demons
+            MonsterType::Imp => self.imp_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::Demon => self.demon_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::Hellfire => self.hellfire_ai(player_pos, map, occupied, adjacent, dist),
+            // Beasts
+            MonsterType::Minotaur => {
+                self.minotaur_ai(player_pos, map, occupied, adjacent, low_hp, dist)
+            }
+            MonsterType::Bear => self.bear_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::WolfPack => self.wolf_ai(player_pos, map, occupied, adjacent, dist),
+            // Humanoids
+            MonsterType::Orc => self.orc_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::Bandit => self.bandit_ai(player_pos, map, occupied, adjacent, dist),
+            MonsterType::Assassin => {
+                self.assassin_ai(player_pos, map, occupied, adjacent, low_hp, dist)
+            }
+            // Elementals
+            MonsterType::FireElemental => {
+                self.fire_elemental_ai(player_pos, map, occupied, adjacent, dist)
+            }
+            MonsterType::EarthElemental => {
+                self.earth_elemental_ai(player_pos, map, occupied, adjacent, low_hp, dist)
+            }
+            MonsterType::IceElemental => {
+                self.ice_elemental_ai(player_pos, map, occupied, adjacent, dist)
+            }
+            // Constructs
+            MonsterType::Golem => self.golem_ai(player_pos, map, occupied, adjacent, low_hp, dist),
+            MonsterType::Sentry => self.sentry_ai(player_pos, map, occupied, adjacent, dist),
+            MonsterType::Bomber => self.bomber_ai(player_pos, map, occupied, adjacent, dist),
         }
     }
 
@@ -1271,5 +1892,492 @@ impl Monster {
         }
 
         MonsterAction::Nothing
+    }
+
+    // ==================== ZOMBIE AI ====================
+    fn zombie_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        // Zombie: slow, tough, regenerates HP. Chase player when seen.
+        self.hp = (self.hp + 1).min(self.max_hp);
+
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn ghoul_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::PoisonAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+                poison_ticks: 3,
+            };
+        }
+
+        if self.can_see_player && dist <= 10 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    // ==================== SPECTER AI ====================
+    fn specter_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        // Specter: silent stalker, high damage, fast. Phases through walls.
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+
+        if self.can_see_player && dist <= 6 {
+            // Phase through walls
+            let dx = player_pos.0 as i32 - self.x as i32;
+            let dy = player_pos.1 as i32 - self.y as i32;
+            let step_x = if dx != 0 { dx.signum() } else { 0 };
+            let step_y = if dy != 0 { dy.signum() } else { 0 };
+
+            let nx = (self.x as i32 + step_x) as usize;
+            let ny = (self.y as i32 + step_y) as usize;
+
+            if nx < map.width && ny < map.height {
+                return MonsterAction::MoveToPhase(nx, ny);
+            }
+        }
+
+        MonsterAction::Nothing
+    }
+
+    fn imp_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        // Imp: small, fast, ranged fire bolt
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+
+        if self.can_see_player && dist <= 5 && self.ranged_cooldown <= 0 {
+            self.ranged_cooldown = 3;
+            let dx = (player_pos.0 as i32 - self.x as i32).signum();
+            let dy = (player_pos.1 as i32 - self.y as i32).signum();
+            let symbol = Projectile::symbol_for_direction(dx, dy);
+            return MonsterAction::FireProjectile(Projectile {
+                x: (self.x as i32 + dx) as usize,
+                y: (self.y as i32 + dy) as usize,
+                dx,
+                dy,
+                damage: self.attack,
+                symbol,
+                source_name: self.name.clone(),
+            });
+        }
+
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn demon_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        // Demon: tough melee, aggressive
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+
+        if self.can_see_player && dist <= 10 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn hellfire_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        // Hellfire Elemental: AOE fire damage to adjacent tiles
+        if adjacent {
+            return MonsterAction::PoisonAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+                poison_ticks: 2,
+            };
+        }
+
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn minotaur_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 10 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn bear_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: if low_hp { self.attack * 2 } else { self.attack },
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn wolf_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 12 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn orc_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 10 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn bandit_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::DrainAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn assassin_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 6 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn fire_elemental_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::PoisonAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+                poison_ticks: 2,
+            };
+        }
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn earth_elemental_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn ice_elemental_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::PoisonAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+                poison_ticks: 2,
+            };
+        }
+        if self.can_see_player && dist <= 8 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn golem_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        _low_hp: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        self.turn_parity = (self.turn_parity + 1) % 2;
+        if self.turn_parity == 0 {
+            return MonsterAction::Nothing;
+        }
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 10 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn sentry_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 6 && self.ranged_cooldown <= 0 {
+            self.ranged_cooldown = 2;
+            let dx = (player_pos.0 as i32 - self.x as i32).signum();
+            let dy = (player_pos.1 as i32 - self.y as i32).signum();
+            let symbol = Projectile::symbol_for_direction(dx, dy);
+            return MonsterAction::FireProjectile(Projectile {
+                x: (self.x as i32 + dx) as usize,
+                y: (self.y as i32 + dy) as usize,
+                dx,
+                dy,
+                damage: self.attack,
+                symbol,
+                source_name: self.name.clone(),
+            });
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
+    }
+
+    fn bomber_ai(
+        &mut self,
+        player_pos: (usize, usize),
+        map: &Map,
+        occupied: &[(usize, usize)],
+        adjacent: bool,
+        dist: i32,
+    ) -> MonsterAction {
+        if adjacent {
+            return MonsterAction::MeleeAttack {
+                damage: self.attack * 2,
+                name: self.name.clone(),
+            };
+        }
+        if self.can_see_player && dist <= 6 {
+            if let Some((nx, ny)) = map.astar_next_step((self.x, self.y), player_pos, occupied) {
+                return MonsterAction::MoveTo(nx, ny);
+            }
+        }
+        self.behavior = BehaviorState::Idle;
+        self.wander(map, occupied)
     }
 }

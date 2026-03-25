@@ -1,5 +1,93 @@
 # Ironveil Development Changelog
 
+## v0.3.0 — Monster Expansion & Quality of Life
+*2026-03-25*
+
+### Save/Load System
+- Added Ctrl+S to save game, Ctrl+L to load game
+- Serialize/Deserialize on all game structs (Player, Map, Monster, Items)
+- Saves to `save.json` in JSON format
+- Loads restore full game state: player, map, monsters, ground items, floor, log
+
+### Fog of War
+- Tiles only visible within 8-tile radius of player (line-of-sight)
+- Explored tiles dimmed (dark grey), unexplored tiles black
+- Visibility updates on every player movement
+- `Map.update_visibility()` using Bresenham line-of-sight
+
+### Buff/Debuff Visualization
+- Player turns White when damage buff active
+- Player turns Green when poisoned
+- Visual feedback for status effects
+
+### Floor Theming
+- Floors 1-3: Grey walls, dark grey floors (dungeon)
+- Floors 4-6: Dark yellow walls (cavern)
+- Floors 7+: Dark red walls, dark magenta floors (void)
+
+### Monster Expansion — 18 New Types
+
+#### Undead
+- **Zombie** (`z` Grey): HP 12, ATK 3. Regenerates 1 HP per tick. Slow chase.
+- **Ghoul** (`G` DarkYellow): HP 8, ATK 5. Poison bite (3 ticks). Fast pursuit.
+- **Specter** (`p` DarkGrey): HP 6, ATK 7. Phases through walls. Silent stalker.
+
+#### Demons
+- **Imp** (`i` Red): HP 7, ATK 4. Ranged fire bolt (3-tick cooldown). Small and fast.
+- **Demon** (`D` Red): HP 18, ATK 6. Tough melee fighter. Aggressive pursuit.
+- **Hellfire Elemental** (`f` DarkRed): HP 12, ATK 5. Fire AOE (2-tick poison).
+
+#### Beasts
+- **Minotaur** (`M` DarkRed): HP 25, ATK 8. Charging beast. Territorial.
+- **Bear** (`B` Yellow): HP 15, ATK 4→8. Berserk at low HP (double damage).
+- **Wolf Pack** (`w` White): HP 6, ATK 3. Fast hunter. Roams in packs.
+
+#### Humanoids
+- **Orc** (`O` DarkYellow): HP 14, ATK 5. Standard warrior. Balanced stats.
+- **Bandit** (`b` DarkYellow): HP 7, ATK 4. Drain attack (steals life). Opportunistic.
+- **Assassin** (`a` DarkGrey): HP 6, ATK 9. One-shot specialist. Stealthy approach.
+
+#### Elementals
+- **Fire Elemental** (`F` Red): HP 10, ATK 5. Fire AOE on hit. Burns adjacent.
+- **Earth Elemental** (`E` DarkCyan): HP 20, ATK 5. Tough and slow. Rocky defense.
+- **Ice Elemental** (`I` Cyan): HP 12, ATK 4. Freeze attack. Cold embrace.
+
+#### Constructs
+- **Golem** (`G` Green): HP 40, ATK 3. Very slow (every other turn). Stone skin.
+- **Sentry** (`s` White): HP 10, ATK 6. Ranged laser (2-tick cooldown). Stationary guardian.
+- **Bomber** (`o` DarkMagenta): HP 8, ATK 10. Kamikaze. Explodes on contact.
+
+### Spawn Table Updates
+- Floors 1-3: Original roster only
+- Floors 4-5: Full early roster + Wraith
+- Floors 6-8: Adds Zombie, Ghoul
+- Floors 9+: All monsters including Specter
+
+### Documentation
+- Created MONSTERS.md — monster catalog with stats
+- Created CLASSES.md — character classes and abilities
+- Created ITEMS.md — weapons, armor, rings, potions
+- Created BIOMES.md — floor themes and biomes
+- Created CONTROLS.md — keybindings reference
+
+---
+
+## Phase 5: Isometric Rendering (Attempted & Reverted)
+*2026-03-25*
+
+### Attempted
+- Migrated from bracket-lib to Fancy console for isometric rendering
+- Created `render.rs` with isometric projection math, camera system, z-sorting
+- Implemented 2-tile tall walls with face rendering
+- Multi-glyph entity rendering (player with head/body)
+
+### Reverted
+- Flickering issues with Fancy console
+- Reverted to 2D ASCII rendering via `git revert`
+- Will revisit with better understanding of bracket-lib rendering
+
+---
+
 ## Phase 4: The World Has Rules
 *Completed: 2026-02-22*
 

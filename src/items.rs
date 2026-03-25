@@ -1,8 +1,9 @@
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 
 // --- Item Types ---
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ItemType {
     Weapon,
     Armor,
@@ -12,7 +13,7 @@ pub enum ItemType {
 
 // --- Item ---
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub name: String,
     pub item_type: ItemType,

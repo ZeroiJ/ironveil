@@ -1,5 +1,7 @@
 use crate::map::{Map, Tile};
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Projectile {
     pub x: usize,
     pub y: usize,

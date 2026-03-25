@@ -1,20 +1,25 @@
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Tile {
     Wall,
     Floor,
     Stairs,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Map {
     pub width: usize,
     pub height: usize,
     pub tiles: Vec<Vec<Tile>>,
     pub rooms: Vec<Rect>,
+    pub visibility: Vec<Vec<bool>>, // true if tile has been seen
+    pub current_visibility: Vec<Vec<bool>>, // true if tile is currently visible
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Rect {
     pub x1: usize,
     pub y1: usize,
@@ -99,7 +104,39 @@ impl Map {
             height,
             tiles,
             rooms,
+            visibility: vec![vec![false; height]; width],
+            current_visibility: vec![vec![false; height]; width],
         }
+    }
+
+    /// Update visibility based on player position using Bresenham line of sight
+    pub fn update_visibility(&mut self, px: usize, py: usize, radius: i32) {
+        // Clear current visibility
+        for x in 0..self.width {
+            for y in 0..self.height {
+                self.current_visibility[x][y] = false;
+            }
+        }
+
+        // Check visibility within radius
+        let start_x = (px as i32 - radius).max(0) as usize;
+        let end_x = ((px as i32 + radius) as usize).min(self.width - 1);
+        let start_y = (py as i32 - radius).max(0) as usize;
+        let end_y = ((py as i32 + radius) as usize).min(self.height - 1);
+
+        for x in start_x..=end_x {
+            for y in start_y..=end_y {
+                let dist = ((x as i32 - px as i32).pow(2) + (y as i32 - py as i32).pow(2)) as f32;
+                if dist <= (radius as f32).powi(2) && self.has_line_of_sight(px, py, x, y) {
+                    self.current_visibility[x][y] = true;
+                    self.visibility[x][y] = true;
+                }
+            }
+        }
+
+        // Always show player position
+        self.current_visibility[px][py] = true;
+        self.visibility[px][py] = true;
     }
 
     /// Spawn ground items across rooms. Returns a HashMap of position -> Item.

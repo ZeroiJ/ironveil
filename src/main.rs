@@ -3,6 +3,7 @@ mod map;
 mod monster;
 mod player;
 mod projectile;
+mod save_load;
 mod ui;
 
 use crossterm::{
@@ -26,29 +27,56 @@ use std::time::{Duration, Instant};
 const MONSTER_TICK_MS: u64 = 500;
 const POLL_TIMEOUT_MS: u64 = 16; // ~60fps loop
 
-fn render_map(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
+fn render_map(stdout: &mut std::io::Stdout, map: &Map, floor: i32) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(0, 0))?;
     for y in 0..map.height {
         for x in 0..map.width {
             execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-            render_tile(stdout, map.tiles[x][y])?;
+            let visible = map.current_visibility[x][y];
+            let seen = map.visibility[x][y];
+            render_tile(stdout, map.tiles[x][y], floor, visible, seen)?;
         }
     }
     Ok(())
 }
 
-fn render_tile(stdout: &mut std::io::Stdout, tile: Tile) -> std::io::Result<()> {
-    match tile {
-        Tile::Wall => {
-            execute!(stdout, SetForegroundColor(Color::Grey), Print("#"))?;
-        }
-        Tile::Floor => {
-            execute!(stdout, SetForegroundColor(Color::DarkGrey), Print("."))?;
-        }
-        Tile::Stairs => {
-            execute!(stdout, SetForegroundColor(Color::White), Print(">"))?;
-        }
+fn render_tile(
+    stdout: &mut std::io::Stdout,
+    tile: Tile,
+    floor: i32,
+    visible: bool,
+    seen: bool,
+) -> std::io::Result<()> {
+    let (wall_color, floor_color) = if floor <= 3 {
+        (Color::Grey, Color::DarkGrey)
+    } else if floor <= 6 {
+        (Color::DarkYellow, Color::DarkGrey)
+    } else {
+        (Color::DarkRed, Color::DarkMagenta)
+    };
+
+    if !seen {
+        execute!(stdout, SetForegroundColor(Color::Black), Print(" "))?;
+        return Ok(());
     }
+
+    let color = if visible {
+        match tile {
+            Tile::Wall => wall_color,
+            Tile::Floor => floor_color,
+            Tile::Stairs => Color::White,
+        }
+    } else {
+        Color::DarkGrey // dim color for seen but not currently visible
+    };
+
+    let glyph = match tile {
+        Tile::Wall => "#",
+        Tile::Floor => ".",
+        Tile::Stairs => ">",
+    };
+
+    execute!(stdout, SetForegroundColor(color), Print(glyph))?;
     Ok(())
 }
 
@@ -75,9 +103,23 @@ fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::i
                     'x' => Color::DarkMagenta,
                     'W' => Color::DarkCyan,
                     'N' => Color::DarkRed,
-                    'K' => Color::Yellow,  // Goblin King - bright gold
-                    'D' => Color::DarkRed, // Bone Dragon - dark red
-                    'S' => Color::Magenta, // Shadow Lord - magenta
+                    'K' => Color::Yellow,
+                    'D' => Color::DarkRed,
+                    'S' => Color::Magenta,
+                    'z' => Color::Grey,
+                    'G' => Color::DarkYellow,
+                    'p' => Color::DarkGrey,
+                    'i' => Color::Red,
+                    'f' => Color::DarkRed,
+                    'M' => Color::DarkRed,
+                    'B' => Color::Yellow,
+                    'w' => Color::White,
+                    'O' => Color::DarkYellow,
+                    'a' => Color::DarkGrey,
+                    'F' => Color::Red,
+                    'E' => Color::DarkCyan,
+                    'I' => Color::Cyan,
+                    'o' => Color::DarkMagenta,
                     _ => Color::Magenta,
                 }
             };
@@ -151,7 +193,9 @@ fn erase_entity(
     y: usize,
 ) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-    render_tile(stdout, map.tiles[x][y])?;
+    let visible = map.current_visibility[x][y];
+    let seen = map.visibility[x][y];
+    render_tile(stdout, map.tiles[x][y], 1, visible, seen)?;
     Ok(())
 }
 
@@ -773,7 +817,7 @@ fn main() -> std::io::Result<()> {
             let map_width = term_width as usize;
             let map_height = (term_height as usize).saturating_sub(7);
 
-            let map = if let Some(m) = cached_map.take() {
+            let mut map = if let Some(m) = cached_map.take() {
                 // Floor 1: use the map we already generated (player spawn already set)
                 m
             } else {
@@ -789,11 +833,13 @@ fn main() -> std::io::Result<()> {
             let mut projectiles: Vec<Projectile> = Vec::new();
             let mut ground_items = map.spawn_ground_items(current_floor);
             let mut webs: HashSet<(usize, usize)> = HashSet::new();
-            let mut player_web_stuck: i32 = 0; // ticks player is stuck in web
+            let mut player_web_stuck: i32 = 0;
             let mut last_monster_tick = Instant::now();
 
+            map.update_visibility(player.x, player.y, 8);
+
             execute!(stdout, Clear(ClearType::All))?;
-            render_map(&mut stdout, &map)?;
+            render_map(&mut stdout, &map, current_floor)?;
             log.push(format!("Welcome to floor {}!", current_floor));
 
             // Boss floor announcement
@@ -823,7 +869,9 @@ fn main() -> std::io::Result<()> {
 
                 // Render player with buff-aware color
                 let active_p_color = if player.has_damage_buff() {
-                    Color::White // bright flash when Power Attack / Shadow Strike active
+                    Color::White
+                } else if player.poison_ticks > 0 {
+                    Color::Green
                 } else {
                     p_color
                 };
@@ -855,12 +903,52 @@ fn main() -> std::io::Result<()> {
 
                             match key_event.code {
                                 KeyCode::Char('q') | KeyCode::Esc => break 'outer,
+                                KeyCode::Char('s')
+                                    if key_event
+                                        .modifiers
+                                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                                {
+                                    match save_load::save_game(
+                                        &player,
+                                        &map,
+                                        &monsters,
+                                        &ground_items,
+                                        current_floor,
+                                        &log,
+                                    ) {
+                                        Ok(_) => log.push("Game saved!".to_string()),
+                                        Err(e) => log.push(format!("Save failed: {}", e)),
+                                    }
+                                }
+                                KeyCode::Char('l')
+                                    if key_event
+                                        .modifiers
+                                        .contains(crossterm::event::KeyModifiers::CONTROL) =>
+                                {
+                                    match save_load::load_game() {
+                                        Ok(data) => {
+                                            player = data.player;
+                                            map = data.map;
+                                            monsters = data.monsters;
+                                            ground_items.clear();
+                                            for (x, y, item) in data.ground_items {
+                                                ground_items.insert((x, y), item);
+                                            }
+                                            current_floor = data.current_floor;
+                                            log = data.log;
+                                            execute!(stdout, Clear(ClearType::All))?;
+                                            render_map(&mut stdout, &map, current_floor)?;
+                                            log.push("Game loaded!".to_string());
+                                        }
+                                        Err(e) => log.push(format!("Load failed: {}", e)),
+                                    }
+                                }
                                 KeyCode::Tab => {
                                     // Open inventory — PAUSES monster tick
                                     ui::inventory_screen(&mut player)?;
                                     // Redraw everything after closing inventory
                                     execute!(stdout, Clear(ClearType::All))?;
-                                    render_map(&mut stdout, &map)?;
+                                    render_map(&mut stdout, &map, current_floor)?;
                                     // Reset monster tick so they don't all act immediately
                                     last_monster_tick = Instant::now();
                                     continue 'inner;
@@ -1352,6 +1440,7 @@ fn main() -> std::io::Result<()> {
                                     } else {
                                         player.x = next_x;
                                         player.y = next_y;
+                                        map.update_visibility(player.x, player.y, 8);
 
                                         // Check if player stepped on a web
                                         if webs.remove(&(player.x, player.y)) {

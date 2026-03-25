@@ -1,8 +1,9 @@
 use crate::items::{Item, ItemType};
+use serde::{Deserialize, Serialize};
 
 // --- Ability System ---
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AbilityType {
     PowerAttack,    // Warrior 1: next melee 2x damage
     WarCry,         // Warrior 2: AoE stun
@@ -12,7 +13,7 @@ pub enum AbilityType {
     FrostNova,      // Mage 2: AoE freeze + damage
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Ability {
     pub name: String,
     pub ability_type: AbilityType,
@@ -156,7 +157,7 @@ impl Ability {
 
 // --- Class System ---
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Class {
     Warrior,
     Rogue,
@@ -198,7 +199,7 @@ impl Class {
 
 // --- Stats ---
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Stats {
     pub str_: i32,
     pub dex: i32,
@@ -230,7 +231,7 @@ impl Stats {
 
 // --- Equipment Slots ---
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Equipment {
     pub weapon: Option<Item>,
     pub armor: Option<Item>,
@@ -275,6 +276,7 @@ impl Equipment {
 
 // --- Player ---
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Player {
     pub x: usize,
     pub y: usize,
