@@ -109,34 +109,51 @@ impl Map {
         }
     }
 
-    /// Update visibility based on player position using Bresenham line of sight
-    pub fn update_visibility(&mut self, px: usize, py: usize, radius: i32) {
-        // Clear current visibility
+    /// Reveal circular area around player position.
+    /// Clears current visibility, then reveals tiles within radius using line of sight.
+    /// Both current_visibility (what's seen now) and visibility (memory) are updated.
+    pub fn reveal_area(&mut self, px: usize, py: usize, radius: i32) {
+        // Clear current visibility (what's seen this frame)
         for x in 0..self.width {
             for y in 0..self.height {
                 self.current_visibility[x][y] = false;
             }
         }
 
-        // Check visibility within radius
-        let start_x = (px as i32 - radius).max(0) as usize;
-        let end_x = ((px as i32 + radius) as usize).min(self.width - 1);
-        let start_y = (py as i32 - radius).max(0) as usize;
-        let end_y = ((py as i32 + radius) as usize).min(self.height - 1);
+        let r2 = radius * radius;
 
-        for x in start_x..=end_x {
-            for y in start_y..=end_y {
-                let dist = ((x as i32 - px as i32).pow(2) + (y as i32 - py as i32).pow(2)) as f32;
-                if dist <= (radius as f32).powi(2) && self.has_line_of_sight(px, py, x, y) {
-                    self.current_visibility[x][y] = true;
-                    self.visibility[x][y] = true;
+        // Check all tiles in bounding box around player
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                let nx = px as i32 + dx;
+                let ny = py as i32 + dy;
+
+                // Bounds check
+                if nx < 0 || ny < 0 || nx >= self.width as i32 || ny >= self.height as i32 {
+                    continue;
+                }
+
+                // Circular Euclidean distance check
+                if (dx * dx + dy * dy) <= r2 {
+                    let (ux, uy) = (nx as usize, ny as usize);
+
+                    // Line of sight check - walls block visibility
+                    if self.has_line_of_sight(px, py, ux, uy) {
+                        self.current_visibility[ux][uy] = true;
+                        self.visibility[ux][uy] = true; // Remember this tile
+                    }
                 }
             }
         }
 
-        // Always show player position
+        // Always reveal player position
         self.current_visibility[px][py] = true;
         self.visibility[px][py] = true;
+    }
+
+    /// Legacy alias for backwards compatibility
+    pub fn update_visibility(&mut self, px: usize, py: usize, radius: i32) {
+        self.reveal_area(px, py, radius);
     }
 
     /// Spawn ground items across rooms. Returns a HashMap of position -> Item.
