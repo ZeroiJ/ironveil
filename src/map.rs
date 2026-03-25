@@ -110,44 +110,32 @@ impl Map {
     }
 
     /// Reveal circular area around player position.
-    /// Clears current visibility, then reveals tiles within radius.
-    /// Both current_visibility (what's seen now) and visibility (memory) are updated.
     pub fn reveal_area(&mut self, px: usize, py: usize, radius: i32) {
-        // Clear current visibility (what's seen this frame)
-        for x in 0..self.width {
-            for y in 0..self.height {
+        let px = px as i32;
+        let py = py as i32;
+        let r = radius;
+        let r2 = r * r;
+
+        // Clear and rebuild current visibility
+        for y in 0..self.height {
+            for x in 0..self.width {
                 self.current_visibility[x][y] = false;
             }
         }
 
-        let r2 = radius * radius;
+        // Check every tile in the map - if within radius, reveal it
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let dx = x as i32 - px;
+                let dy = y as i32 - py;
+                let dist2 = dx * dx + dy * dy;
 
-        // Check all tiles in bounding box around player
-        for dy in -radius..=radius {
-            for dx in -radius..=radius {
-                let nx = px as i32 + dx;
-                let ny = py as i32 + dy;
-
-                // Bounds check
-                if nx < 0 || ny < 0 || nx >= self.width as i32 || ny >= self.height as i32 {
-                    continue;
-                }
-
-                // Circular Euclidean distance check
-                if (dx * dx + dy * dy) <= r2 {
-                    let (ux, uy) = (nx as usize, ny as usize);
-
-                    // Simple illumination - no line of sight check
-                    // This reveals walls AND floors within radius
-                    self.current_visibility[ux][uy] = true;
-                    self.visibility[ux][uy] = true;
+                if dist2 <= r2 {
+                    self.current_visibility[x][y] = true;
+                    self.visibility[x][y] = true;
                 }
             }
         }
-
-        // Always reveal player position
-        self.current_visibility[px][py] = true;
-        self.visibility[px][py] = true;
     }
 
     /// Legacy alias for backwards compatibility
