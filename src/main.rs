@@ -28,14 +28,29 @@ const MONSTER_TICK_MS: u64 = 500;
 const POLL_TIMEOUT_MS: u64 = 16; // ~60fps loop
 const PLAYER_PULSE_MS: u64 = 500; // Player blink/pulse speed
 
-fn render_map(stdout: &mut std::io::Stdout, map: &Map, floor: i32) -> std::io::Result<()> {
+// Camera settings
+const CAMERA_WIDTH: usize = 60; // Viewport width in tiles
+const CAMERA_HEIGHT: usize = 20; // Viewport height in tiles
+const PLAYER_TRAIL_LENGTH: usize = 8; // Number of trail positions
+
+fn render_map(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    floor: i32,
+    camera: (usize, usize),
+) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(0, 0))?;
-    for y in 0..map.height {
-        for x in 0..map.width {
-            execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-            let visible = map.current_visibility[x][y];
-            let seen = map.visibility[x][y];
-            render_tile(stdout, map.tiles[x][y], floor, visible, seen)?;
+    for y in 0..CAMERA_HEIGHT {
+        for x in 0..CAMERA_WIDTH {
+            let map_x = camera.0 + x;
+            let map_y = camera.1 + y;
+
+            if map_x < map.width && map_y < map.height {
+                execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
+                let visible = map.current_visibility[map_x][map_y];
+                let seen = map.visibility[map_x][map_y];
+                render_tile(stdout, map.tiles[map_x][map_y], floor, visible, seen)?;
+            }
         }
     }
     Ok(())
@@ -73,9 +88,24 @@ fn render_tile(
     Ok(())
 }
 
-fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::io::Result<()> {
+fn render_monsters(
+    stdout: &mut std::io::Stdout,
+    monsters: &[Monster],
+    camera: (usize, usize),
+) -> std::io::Result<()> {
     for monster in monsters {
         if monster.is_alive() {
+            // Check if monster is within camera view
+            let screen_x = monster.x as i32 - camera.0 as i32;
+            let screen_y = monster.y as i32 - camera.1 as i32;
+            if screen_x < 0
+                || screen_x >= CAMERA_WIDTH as i32
+                || screen_y < 0
+                || screen_y >= CAMERA_HEIGHT as i32
+            {
+                continue;
+            }
+
             // Wraiths inside walls are invisible
             if monster.is_phasing {
                 continue;
@@ -118,9 +148,35 @@ fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::i
             };
             execute!(
                 stdout,
-                cursor::MoveTo(monster.x as u16, monster.y as u16),
+                cursor::MoveTo(screen_x as u16, screen_y as u16),
                 SetForegroundColor(color),
                 Print(monster.symbol)
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_player_trail(
+    stdout: &mut std::io::Stdout,
+    trail: &[(usize, usize)],
+    camera: (usize, usize),
+) -> std::io::Result<()> {
+    for (i, &(tx, ty)) in trail.iter().enumerate() {
+        let screen_x = tx as i32 - camera.0 as i32;
+        let screen_y = ty as i32 - camera.1 as i32;
+
+        if screen_x >= 0
+            && screen_x < CAMERA_WIDTH as i32
+            && screen_y >= 0
+            && screen_y < CAMERA_HEIGHT as i32
+        {
+            let trail_color = Color::DarkGrey;
+            execute!(
+                stdout,
+                cursor::MoveTo(screen_x as u16, screen_y as u16),
+                SetForegroundColor(trail_color),
+                Print("·")
             )?;
         }
     }
@@ -130,11 +186,23 @@ fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::i
 fn render_projectiles(
     stdout: &mut std::io::Stdout,
     projectiles: &[Projectile],
+    camera: (usize, usize),
 ) -> std::io::Result<()> {
     for proj in projectiles {
+        let screen_x = proj.x as i32 - camera.0 as i32;
+        let screen_y = proj.y as i32 - camera.1 as i32;
+
+        if screen_x < 0
+            || screen_x >= CAMERA_WIDTH as i32
+            || screen_y < 0
+            || screen_y >= CAMERA_HEIGHT as i32
+        {
+            continue;
+        }
+
         execute!(
             stdout,
-            cursor::MoveTo(proj.x as u16, proj.y as u16),
+            cursor::MoveTo(screen_x as u16, screen_y as u16),
             SetForegroundColor(Color::Yellow),
             Print(proj.symbol)
         )?;
@@ -145,8 +213,20 @@ fn render_projectiles(
 fn render_ground_items(
     stdout: &mut std::io::Stdout,
     ground_items: &HashMap<(usize, usize), Item>,
+    camera: (usize, usize),
 ) -> std::io::Result<()> {
     for (&(x, y), item) in ground_items {
+        let screen_x = x as i32 - camera.0 as i32;
+        let screen_y = y as i32 - camera.1 as i32;
+
+        if screen_x < 0
+            || screen_x >= CAMERA_WIDTH as i32
+            || screen_y < 0
+            || screen_y >= CAMERA_HEIGHT as i32
+        {
+            continue;
+        }
+
         let color = match item.item_type {
             ItemType::Weapon => Color::Cyan,
             ItemType::Armor => Color::DarkYellow,
@@ -155,7 +235,7 @@ fn render_ground_items(
         };
         execute!(
             stdout,
-            cursor::MoveTo(x as u16, y as u16),
+            cursor::MoveTo(screen_x as u16, screen_y as u16),
             SetForegroundColor(color),
             Print(item.symbol)
         )?;
@@ -166,11 +246,23 @@ fn render_ground_items(
 fn render_webs(
     stdout: &mut std::io::Stdout,
     webs: &std::collections::HashSet<(usize, usize)>,
+    camera: (usize, usize),
 ) -> std::io::Result<()> {
     for &(x, y) in webs {
+        let screen_x = x as i32 - camera.0 as i32;
+        let screen_y = y as i32 - camera.1 as i32;
+
+        if screen_x < 0
+            || screen_x >= CAMERA_WIDTH as i32
+            || screen_y < 0
+            || screen_y >= CAMERA_HEIGHT as i32
+        {
+            continue;
+        }
+
         execute!(
             stdout,
-            cursor::MoveTo(x as u16, y as u16),
+            cursor::MoveTo(screen_x as u16, screen_y as u16),
             SetForegroundColor(Color::White),
             Print(":")
         )?;
@@ -649,10 +741,11 @@ fn process_monsters(
 
 fn render_ui(
     stdout: &mut std::io::Stdout,
-    map_height: usize,
     current_floor: i32,
     player: &Player,
     log: &[String],
+    player_x: usize,
+    player_y: usize,
 ) -> std::io::Result<()> {
     let stats = player.effective_stats();
     let weapon_name = player
@@ -663,17 +756,19 @@ fn render_ui(
 
     // Status line 1: Floor, HP, Level, Class, Weapon
     let status = format!(
-        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {}",
+        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {} | Pos:({},{})",
         current_floor,
         player.hp,
         player.max_hp,
         player.level,
         player.class.name(),
-        weapon_name
+        weapon_name,
+        player_x,
+        player_y
     );
     execute!(
         stdout,
-        cursor::MoveTo(0, map_height as u16 + 1),
+        cursor::MoveTo(0, CAMERA_HEIGHT as u16 + 1),
         SetForegroundColor(Color::White),
         Clear(ClearType::UntilNewLine),
         Print(&status)
@@ -705,7 +800,7 @@ fn render_ui(
     );
     execute!(
         stdout,
-        cursor::MoveTo(0, map_height as u16 + 2),
+        cursor::MoveTo(0, CAMERA_HEIGHT as u16 + 2),
         SetForegroundColor(Color::DarkGrey),
         Clear(ClearType::UntilNewLine),
         Print(&stat_line)
@@ -736,7 +831,7 @@ fn render_ui(
     let ability_line = format!("{} {} {}", a1_text, a2_text, poison_text);
     execute!(
         stdout,
-        cursor::MoveTo(0, map_height as u16 + 3),
+        cursor::MoveTo(0, CAMERA_HEIGHT as u16 + 3),
         SetForegroundColor(Color::Cyan),
         Clear(ClearType::UntilNewLine),
         Print(&ability_line)
@@ -746,7 +841,7 @@ fn render_ui(
     for (i, msg) in log.iter().rev().take(3).enumerate() {
         execute!(
             stdout,
-            cursor::MoveTo(0, map_height as u16 + 4 + i as u16),
+            cursor::MoveTo(0, CAMERA_HEIGHT as u16 + 4 + i as u16),
             SetForegroundColor(Color::Grey),
             Clear(ClearType::UntilNewLine),
             Print(msg)
@@ -767,10 +862,9 @@ fn main() -> std::io::Result<()> {
         let chosen_class = ui::character_creation_screen()?;
         let p_color = player_color(chosen_class);
 
-        // Create player ONCE — persists across all floors
-        let (term_width, term_height) = terminal::size()?;
-        let map_width = term_width as usize;
-        let map_height = (term_height as usize).saturating_sub(7);
+        // Fixed map size (larger than viewport for camera to work)
+        let map_width = 120;
+        let map_height = 80;
         let first_map = Map::new(map_width, map_height);
         let (spawn_x, spawn_y) = first_map.get_starting_position();
 
@@ -799,12 +893,18 @@ fn main() -> std::io::Result<()> {
 
         // Store first map in an Option so we can take() it once, then generate new maps
         let mut cached_map: Option<Map> = Some(first_map);
+        let mut player_trail: Vec<(usize, usize)> = Vec::new();
 
         // Floor loop — player persists, map regenerates each floor
         'floor_loop: loop {
-            let (term_width, term_height) = terminal::size()?;
-            let map_width = term_width as usize;
-            let map_height = (term_height as usize).saturating_sub(7);
+            // Calculate camera offset (centered on player)
+            let mut camera_x = player.x as i32 - (CAMERA_WIDTH as i32 / 2);
+            let mut camera_y = player.y as i32 - (CAMERA_HEIGHT as i32 / 2);
+
+            // Clamp camera to map bounds
+            camera_x = camera_x.max(0).min((map_width - CAMERA_WIDTH) as i32);
+            camera_y = camera_y.max(0).min((map_height - CAMERA_HEIGHT) as i32);
+            let camera_offset = (camera_x as usize, camera_y as usize);
 
             let mut map = if let Some(m) = cached_map.take() {
                 // Floor 1: use the map we already generated (player spawn already set)
@@ -831,11 +931,18 @@ fn main() -> std::io::Result<()> {
             let max_reveal_radius = 12;
             let frames_per_ring = 3; // ~50ms per ring at 60fps
 
+            // Initial camera for reveal animation (centered on player)
+            let mut camera_x = player.x as i32 - (CAMERA_WIDTH as i32 / 2);
+            let mut camera_y = player.y as i32 - (CAMERA_HEIGHT as i32 / 2);
+            camera_x = camera_x.max(0).min((map_width - CAMERA_WIDTH) as i32);
+            camera_y = camera_y.max(0).min((map_height - CAMERA_HEIGHT) as i32);
+            let initial_camera = (camera_x as usize, camera_y as usize);
+
             execute!(stdout, Clear(ClearType::All))?;
 
             // Show empty map first
             map.reveal_all();
-            render_map(&mut stdout, &map, current_floor)?;
+            render_map(&mut stdout, &map, current_floor, initial_camera)?;
             stdout.flush()?;
 
             // Hide map again for animation
@@ -854,7 +961,7 @@ fn main() -> std::io::Result<()> {
                 }
 
                 map.reveal_ring(player.x, player.y, radius);
-                render_map(&mut stdout, &map, current_floor)?;
+                render_map(&mut stdout, &map, current_floor, initial_camera)?;
                 stdout.flush()?;
 
                 frame_count += 1;
@@ -881,11 +988,30 @@ fn main() -> std::io::Result<()> {
 
             'inner: loop {
                 // --- RENDER ---
-                render_ui(&mut stdout, map_height, current_floor, &player, &log)?;
-                render_webs(&mut stdout, &webs)?;
-                render_ground_items(&mut stdout, &ground_items)?;
-                render_monsters(&mut stdout, &monsters)?;
-                render_projectiles(&mut stdout, &projectiles)?;
+                // Recalculate camera each frame (in case terminal resized)
+                let mut camera_x = player.x as i32 - (CAMERA_WIDTH as i32 / 2);
+                let mut camera_y = player.y as i32 - (CAMERA_HEIGHT as i32 / 2);
+                camera_x = camera_x.max(0).min((map_width - CAMERA_WIDTH) as i32);
+                camera_y = camera_y.max(0).min((map_height - CAMERA_HEIGHT) as i32);
+                let camera_offset = (camera_x as usize, camera_y as usize);
+
+                render_ui(
+                    &mut stdout,
+                    current_floor,
+                    &player,
+                    &log,
+                    player.x,
+                    player.y,
+                )?;
+                render_webs(&mut stdout, &webs, camera_offset)?;
+                render_ground_items(&mut stdout, &ground_items, camera_offset)?;
+                render_monsters(&mut stdout, &monsters, camera_offset)?;
+                render_projectiles(&mut stdout, &projectiles, camera_offset)?;
+                render_player_trail(&mut stdout, &player_trail, camera_offset)?;
+
+                // Player screen position
+                let player_screen_x = player.x as i32 - camera_offset.0 as i32;
+                let player_screen_y = player.y as i32 - camera_offset.1 as i32;
 
                 // Player pulse effect - toggle between White and Yellow
                 let pulse_on =
@@ -904,7 +1030,7 @@ fn main() -> std::io::Result<()> {
 
                 execute!(
                     stdout,
-                    cursor::MoveTo(player.x as u16, player.y as u16),
+                    cursor::MoveTo(player_screen_x as u16, player_screen_y as u16),
                     SetForegroundColor(active_p_color),
                     Print("@"),
                 )?;
@@ -963,7 +1089,12 @@ fn main() -> std::io::Result<()> {
                                             current_floor = data.current_floor;
                                             log = data.log;
                                             execute!(stdout, Clear(ClearType::All))?;
-                                            render_map(&mut stdout, &map, current_floor)?;
+                                            render_map(
+                                                &mut stdout,
+                                                &map,
+                                                current_floor,
+                                                camera_offset,
+                                            )?;
                                             log.push("Game loaded!".to_string());
                                         }
                                         Err(e) => log.push(format!("Load failed: {}", e)),
@@ -974,7 +1105,7 @@ fn main() -> std::io::Result<()> {
                                     ui::inventory_screen(&mut player)?;
                                     // Redraw everything after closing inventory
                                     execute!(stdout, Clear(ClearType::All))?;
-                                    render_map(&mut stdout, &map, current_floor)?;
+                                    render_map(&mut stdout, &map, current_floor, camera_offset)?;
                                     // Reset monster tick so they don't all act immediately
                                     last_monster_tick = Instant::now();
                                     continue 'inner;
@@ -1467,6 +1598,12 @@ fn main() -> std::io::Result<()> {
                                         player.x = next_x;
                                         player.y = next_y;
                                         map.update_visibility(player.x, player.y, 8);
+
+                                        // Update player trail
+                                        player_trail.push((player.x, player.y));
+                                        while player_trail.len() > PLAYER_TRAIL_LENGTH {
+                                            player_trail.remove(0);
+                                        }
 
                                         // Check if player stepped on a web
                                         if webs.remove(&(player.x, player.y)) {
