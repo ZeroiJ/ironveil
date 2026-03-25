@@ -13,16 +13,25 @@ Terminal-based roguelike game "Ironveil" written in Rust. Uses crossterm for ter
 ```
 ironveil/
 ├── src/
-│   ├── main.rs       # Game loop, rendering, input handling (1575 lines)
-│   ├── map.rs        # Procedural map generation, visibility (459 lines)
-│   ├── monster.rs    # Monster AI, behaviors, types (2400+ lines)
-│   ├── player.rs     # Player state, stats, abilities (626 lines)
-│   ├── items.rs      # Item definitions, loot generation (300+ lines)
-│   ├── ui.rs         # Character creation, inventory screens (474 lines)
-│   ├── projectile.rs # Arrow/projectile handling (54 lines)
-│   └── save_load.rs  # Game save/load to JSON (56 lines)
-├── Cargo.toml        # crossterm, rand, serde dependencies
-└── target/           # Build artifacts
+│   ├── main.rs       # Game loop, rendering, input handling
+│   ├── map.rs        # Procedural map generation, visibility
+│   ├── monster.rs    # Monster AI, behaviors, types
+│   ├── player.rs     # Player state, stats, abilities
+│   ├── items.rs      # Item definitions, loot generation
+│   ├── ui.rs         # Character creation, inventory screens
+│   ├── projectile.rs # Arrow/projectile handling
+│   └── save_load.rs  # Game save/load
+├── docs/             # Documentation
+│   ├── AGENTS.md     # This file
+│   ├── BIOMES.md     # Biome definitions
+│   ├── CLASSES.md    # Character classes
+│   ├── CONTROLS.md   # Input controls
+│   ├── ITEMS.md      # Item database
+│   ├── MONSTERS.md   # Monster encyclopedia
+│   └── *.md          # Plans and improvements
+├── CHANGELOG.md      # Version history
+├── Cargo.toml        # crossterm, rand, serde
+└── target/          # Build output
 ```
 
 ## WHERE TO LOOK
