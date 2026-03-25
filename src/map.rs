@@ -138,6 +138,50 @@ impl Map {
         }
     }
 
+    /// Reveal tiles at exactly the given radius (ring reveal for animation)
+    /// Returns true if any new tiles were revealed
+    pub fn reveal_ring(&mut self, px: usize, py: usize, radius: i32) -> bool {
+        let px = px as i32;
+        let py = py as i32;
+        let r = radius;
+        let r2 = r * r;
+        let prev_r2 = (r - 1) * (r - 1);
+        let mut any_revealed = false;
+
+        for y in 0..self.height {
+            for x in 0..self.width {
+                let dx = x as i32 - px;
+                let dy = y as i32 - py;
+                let dist2 = dx * dx + dy * dy;
+
+                // Only reveal tiles in the ring (between prev radius and this radius)
+                if dist2 <= r2 && dist2 > prev_r2 {
+                    self.current_visibility[x][y] = true;
+                    self.visibility[x][y] = true;
+                    any_revealed = true;
+                }
+            }
+        }
+
+        // Always reveal player position
+        if px >= 0 && py >= 0 && (px as usize) < self.width && (py as usize) < self.height {
+            self.current_visibility[px as usize][py as usize] = true;
+            self.visibility[px as usize][py as usize] = true;
+        }
+
+        any_revealed
+    }
+
+    /// Fully reveal entire map (for debug or when disabling fog)
+    pub fn reveal_all(&mut self) {
+        for y in 0..self.height {
+            for x in 0..self.width {
+                self.current_visibility[x][y] = true;
+                self.visibility[x][y] = true;
+            }
+        }
+    }
+
     /// Legacy alias for backwards compatibility
     pub fn update_visibility(&mut self, px: usize, py: usize, radius: i32) {
         self.reveal_area(px, py, radius);

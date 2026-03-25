@@ -828,10 +828,40 @@ fn main() -> std::io::Result<()> {
             let mut player_web_stuck: i32 = 0;
             let mut last_monster_tick = Instant::now();
 
-            map.update_visibility(player.x, player.y, 8);
+            // Progressive reveal animation - expand from player outward
+            // Medium speed: ~1-2 seconds to fully reveal
+            let max_reveal_radius = 12;
+            let frames_per_ring = 3; // ~50ms per ring at 60fps
 
             execute!(stdout, Clear(ClearType::All))?;
+
+            // Show empty map first
+            map.reveal_all();
             render_map(&mut stdout, &map, current_floor)?;
+            stdout.flush()?;
+
+            // Hide map again for animation
+            for y in 0..map.height {
+                for x in 0..map.width {
+                    map.current_visibility[x][y] = false;
+                }
+            }
+
+            // Progressive reveal - ring by ring from player
+            let mut frame_count = 0;
+            for radius in 0..=max_reveal_radius {
+                // Add delay to make it visible to eye
+                if frame_count > 0 && frame_count % frames_per_ring == 0 {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+
+                map.reveal_ring(player.x, player.y, radius);
+                render_map(&mut stdout, &map, current_floor)?;
+                stdout.flush()?;
+
+                frame_count += 1;
+            }
+
             log.push(format!("Welcome to floor {}!", current_floor));
 
             // Boss floor announcement
