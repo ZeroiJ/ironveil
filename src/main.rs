@@ -26,6 +26,7 @@ use std::time::{Duration, Instant};
 
 const MONSTER_TICK_MS: u64 = 500;
 const POLL_TIMEOUT_MS: u64 = 16; // ~60fps loop
+const PLAYER_PULSE_MS: u64 = 500; // Player blink/pulse speed
 
 fn render_map(stdout: &mut std::io::Stdout, map: &Map, floor: i32) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(0, 0))?;
@@ -210,13 +211,9 @@ fn all_monster_positions(monsters: &[Monster]) -> Vec<(usize, usize)> {
         .collect()
 }
 
-/// Player color based on class.
-fn player_color(class: Class) -> Color {
-    match class {
-        Class::Warrior => Color::Red,
-        Class::Rogue => Color::Green,
-        Class::Mage => Color::Blue,
-    }
+/// Player base color - always bright white for visibility
+fn player_color(_class: Class) -> Color {
+    Color::White
 }
 
 /// Process projectile movement and collisions.
@@ -827,6 +824,7 @@ fn main() -> std::io::Result<()> {
             let mut webs: HashSet<(usize, usize)> = HashSet::new();
             let mut player_web_stuck: i32 = 0;
             let mut last_monster_tick = Instant::now();
+            let mut pulse_start_time = Instant::now();
 
             // Progressive reveal animation - expand from player outward
             // Medium speed: ~1-2 seconds to fully reveal
@@ -889,13 +887,19 @@ fn main() -> std::io::Result<()> {
                 render_monsters(&mut stdout, &monsters)?;
                 render_projectiles(&mut stdout, &projectiles)?;
 
-                // Render player with buff-aware color
+                // Player pulse effect - toggle between White and Yellow
+                let pulse_on =
+                    (pulse_start_time.elapsed().as_millis() / PLAYER_PULSE_MS as u128) % 2 == 0;
+
+                // Render player with buff-aware color + pulse effect
                 let active_p_color = if player.has_damage_buff() {
                     Color::White
                 } else if player.poison_ticks > 0 {
                     Color::Green
+                } else if pulse_on {
+                    Color::White // Bright pulse
                 } else {
-                    p_color
+                    Color::Yellow // Dimmer pulse
                 };
 
                 execute!(
