@@ -110,7 +110,7 @@ impl Map {
     }
 
     /// Reveal circular area around player position.
-    /// Clears current visibility, then reveals tiles within radius using line of sight.
+    /// Clears current visibility, then reveals tiles within radius.
     /// Both current_visibility (what's seen now) and visibility (memory) are updated.
     pub fn reveal_area(&mut self, px: usize, py: usize, radius: i32) {
         // Clear current visibility (what's seen this frame)
@@ -137,11 +137,10 @@ impl Map {
                 if (dx * dx + dy * dy) <= r2 {
                     let (ux, uy) = (nx as usize, ny as usize);
 
-                    // Line of sight check - walls block visibility
-                    if self.has_line_of_sight(px, py, ux, uy) {
-                        self.current_visibility[ux][uy] = true;
-                        self.visibility[ux][uy] = true; // Remember this tile
-                    }
+                    // Simple illumination - no line of sight check
+                    // This reveals walls AND floors within radius
+                    self.current_visibility[ux][uy] = true;
+                    self.visibility[ux][uy] = true;
                 }
             }
         }
