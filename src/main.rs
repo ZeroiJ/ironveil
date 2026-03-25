@@ -653,6 +653,8 @@ fn render_ui(
     current_floor: i32,
     player: &Player,
     log: &[String],
+    player_x: usize,
+    player_y: usize,
 ) -> std::io::Result<()> {
     let stats = player.effective_stats();
     let weapon_name = player
@@ -661,15 +663,17 @@ fn render_ui(
         .as_ref()
         .map_or("Fists".to_string(), |w| w.display_name());
 
-    // Status line 1: Floor, HP, Level, Class, Weapon
+    // Status line 1: Floor, HP, Level, Class, Weapon, Coordinates
     let status = format!(
-        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {}",
+        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {} | Pos:({},{})",
         current_floor,
         player.hp,
         player.max_hp,
         player.level,
         player.class.name(),
-        weapon_name
+        weapon_name,
+        player_x,
+        player_y
     );
     execute!(
         stdout,
@@ -881,7 +885,15 @@ fn main() -> std::io::Result<()> {
 
             'inner: loop {
                 // --- RENDER ---
-                render_ui(&mut stdout, map_height, current_floor, &player, &log)?;
+                render_ui(
+                    &mut stdout,
+                    map_height,
+                    current_floor,
+                    &player,
+                    &log,
+                    player.x,
+                    player.y,
+                )?;
                 render_webs(&mut stdout, &webs)?;
                 render_ground_items(&mut stdout, &ground_items)?;
                 render_monsters(&mut stdout, &monsters)?;
