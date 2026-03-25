@@ -1,5 +1,30 @@
 # Ironveil Development Changelog
 
+## v0.3.1 — Player Visibility & Floor Reveal
+*2026-03-25*
+
+### Player Visibility
+- Player character now bright White (not class-based colors)
+- Pulsing effect: toggles White/Yellow every 500ms
+- Easier to locate on the map
+
+### Progressive Floor Reveal
+- New floors reveal in a wave from player outward
+- Ring-by-ring reveal animation (~1-2 seconds)
+- Visual feedback when entering new floors
+
+### Coordinate Display
+- Player position shown in UI: `Pos:(X,Y)`
+- Easy reference for navigation
+
+### Reverted Features
+- Camera system (viewport scrolling) - reverted due to usability issues
+- Player trail - reverted with camera
+- Fog of war - disabled due to visibility algorithm bugs
+- See `docs/REVERTED.md` for details
+
+---
+
 ## v0.3.0 — Monster Expansion & Quality of Life
 *2026-03-25*
 
