@@ -33,28 +33,6 @@ This file tracks features that were implemented but reverted due to issues.
 
 ---
 
-## Fog of War
-
-**Implemented then disabled**
-**Date:** 2026-03-25
-
-### What was attempted:
-- Circular visibility radius around player (8 tiles)
-- Line-of-sight checking (walls block vision)
-- "Seen" memory for previously visited areas
-
-### Why disabled:
-- Visibility algorithm (Bresenham line-of-sight) was blocking too many tiles
-- Irregular reveal pattern with gaps
-- Only tiles player stepped on were visible, not surrounding area
-
-### Possible future approach:
-- Simple circular reveal without line-of-sight
-- Or use established FOV algorithms (shadowcasting, recursive shadowcast)
-- Test thoroughly before enabling
-
----
-
 ## Notes
 
 When re-implementing any of these features:

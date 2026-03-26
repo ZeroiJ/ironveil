@@ -1,5 +1,30 @@
 # Ironveil Development Changelog
 
+## v0.3.2 — Fog of War & Performance
+*2026-03-26*
+
+### Fog of War
+- Implemented proper line-of-sight visibility (walls block vision)
+- Tiles within radius 8 are visible if no walls blocking
+- "Seen" memory: explored areas remain visible but dimmed
+- Unexplored areas render as black
+
+### Delta Rendering
+- Added delta rendering for fog of war (only redraws changed tiles)
+- Full render removed from inner loop to eliminate input lag
+- Map tiles only update when player visibility changes
+- Smooth performance: no flickering, immediate input response
+
+### Entity Visibility
+- Monsters hidden in unexplored areas
+- Ground items hidden in unexplored areas
+- Webs hidden in unexplored areas
+
+### Save/Load
+- Visibility state preserved across save/load
+
+---
+
 ## v0.3.1 — Player Visibility & Floor Reveal
 *2026-03-25*
 
@@ -20,8 +45,8 @@
 ### Reverted Features
 - Camera system (viewport scrolling) - reverted due to usability issues
 - Player trail - reverted with camera
-- Fog of war - disabled due to visibility algorithm bugs
-- See `docs/REVERTED.md` for details
+- Fog of war - FIXED in v0.3.2 (now working with LOS)
+- See `docs/REVERTED.md` for remaining reverted features
 
 ---
 
