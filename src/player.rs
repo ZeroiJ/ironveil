@@ -296,6 +296,12 @@ pub struct Player {
     pub xp_to_next_level: i32,
     // Status effects
     pub poison_ticks: i32,
+    // Death stats
+    pub monsters_slain: u32,
+    pub damage_dealt: i32,
+    pub damage_taken: i32,
+    pub cause_of_death: String,
+    pub last_damage_source: Option<(String, i32)>,
 }
 
 pub const INVENTORY_CAPACITY: usize = 10;
@@ -326,8 +332,13 @@ impl Player {
             pending_ability_direction: None,
             xp: 0,
             level: 1,
-            xp_to_next_level: 50, // Level 2 threshold
+            xp_to_next_level: 50,
             poison_ticks: 0,
+            monsters_slain: 0,
+            damage_dealt: 0,
+            damage_taken: 0,
+            cause_of_death: String::new(),
+            last_damage_source: None,
         }
     }
 

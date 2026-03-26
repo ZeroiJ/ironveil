@@ -237,6 +237,138 @@ fn render_webs(
     Ok(())
 }
 
+fn show_death_screen(
+    stdout: &mut std::io::Stdout,
+    player: &Player,
+    current_floor: i32,
+) -> std::io::Result<bool> {
+    use crossterm::event::{Event, KeyCode};
+
+    execute!(stdout, Clear(ClearType::All))?;
+
+    let (term_width, term_height) = terminal::size()?;
+    let cx = term_width / 2;
+    let cy = term_height / 2;
+
+    let skull = vec![
+        "  . . . X . . .",
+        ". X X X X X X X .",
+        "X X X X X X X X X",
+        ". X X X X X X X .",
+        "  . . X X X . .",
+        "      @ @ @",
+    ];
+
+    for (i, line) in skull.iter().enumerate() {
+        execute!(
+            stdout,
+            cursor::MoveTo(cx - 10, cy - 12 + i as u16),
+            SetForegroundColor(Color::DarkGrey),
+            Print(line)
+        )?;
+        stdout.flush()?;
+        std::thread::sleep(Duration::from_millis(80));
+    }
+
+    for _ in 0..3 {
+        execute!(
+            stdout,
+            cursor::MoveTo(cx - 10, cy - 4),
+            SetForegroundColor(Color::DarkRed),
+            Print("  * YOU HAVE DIED *")
+        )?;
+        stdout.flush()?;
+        std::thread::sleep(Duration::from_millis(200));
+        execute!(
+            stdout,
+            cursor::MoveTo(cx - 10, cy - 4),
+            SetForegroundColor(Color::Black),
+            Print("  * YOU HAVE DIED *")
+        )?;
+        stdout.flush()?;
+        std::thread::sleep(Duration::from_millis(200));
+    }
+
+    execute!(
+        stdout,
+        cursor::MoveTo(cx - 10, cy - 4),
+        SetForegroundColor(Color::DarkRed),
+        Print("  * YOU HAVE DIED *")
+    )?;
+
+    let separator = "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~";
+    let stats = vec![
+        ("Class", player.class.name().to_string(), Color::Grey),
+        ("Floor reached", current_floor.to_string(), Color::Grey),
+        (
+            "Monsters slain",
+            player.monsters_slain.to_string(),
+            Color::Grey,
+        ),
+        ("Damage dealt", player.damage_dealt.to_string(), Color::Grey),
+        ("Damage taken", player.damage_taken.to_string(), Color::Grey),
+        (
+            "Cause of death",
+            player.cause_of_death.clone(),
+            Color::DarkRed,
+        ),
+    ];
+
+    execute!(
+        stdout,
+        cursor::MoveTo(cx - 16, cy - 2),
+        SetForegroundColor(Color::DarkGrey),
+        Print(separator)
+    )?;
+    stdout.flush()?;
+    std::thread::sleep(Duration::from_millis(120));
+
+    for (i, (label, value, color)) in stats.iter().enumerate() {
+        let row = cy + i as u16;
+        execute!(
+            stdout,
+            cursor::MoveTo(cx - 16, row),
+            SetForegroundColor(Color::DarkGrey),
+            Print(label)
+        )?;
+        execute!(
+            stdout,
+            cursor::MoveTo(cx + 4, row),
+            SetForegroundColor(*color),
+            Print(value)
+        )?;
+        stdout.flush()?;
+        std::thread::sleep(Duration::from_millis(120));
+    }
+
+    execute!(
+        stdout,
+        cursor::MoveTo(cx - 16, cy + stats.len() as u16 + 1),
+        SetForegroundColor(Color::DarkGrey),
+        Print(separator)
+    )?;
+    stdout.flush()?;
+    std::thread::sleep(Duration::from_millis(200));
+
+    execute!(
+        stdout,
+        cursor::MoveTo(cx - 16, cy + stats.len() as u16 + 3),
+        SetForegroundColor(Color::DarkGrey),
+        Print("[R] Play again          [Q] Quit")
+    )?;
+    stdout.flush()?;
+
+    loop {
+        if let Event::Key(key_event) = event::read()? {
+            match key_event.code {
+                KeyCode::Char('r') | KeyCode::Char('R') => return Ok(true),
+                KeyCode::Char('q') | KeyCode::Char('Q') | KeyCode::Esc => return Ok(false),
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Erase a position by restoring the underlying tile.
 fn erase_entity(
     stdout: &mut std::io::Stdout,
@@ -309,7 +441,9 @@ fn process_projectiles(
             } else {
                 let raw_dmg = projectiles[i].damage;
                 let dmg = player.reduce_damage(raw_dmg);
+                player.last_damage_source = Some(("Arrow".to_string(), dmg));
                 player.take_damage(dmg);
+                player.damage_taken += dmg;
                 log.push(format!("An arrow hits you for {} damage!", dmg));
             }
             projectiles.remove(i);
@@ -369,6 +503,7 @@ fn process_monsters(
             monsters[i].poison_ticks -= 1;
             monsters[i].take_damage(1);
             if !monsters[i].is_alive() {
+                player.monsters_slain += 1;
                 log.push(format!("The {} dies from poison!", monsters[i].name));
                 // XP reward for poison kill
                 let xp = monsters[i].xp_value();
@@ -410,7 +545,9 @@ fn process_monsters(
                     log.push(format!("You dodge the {}'s attack!", name));
                 } else {
                     let dmg = player.reduce_damage(damage);
+                    player.last_damage_source = Some((name.to_string(), dmg));
                     player.take_damage(dmg);
+                    player.damage_taken += dmg;
                     log.push(format!("The {} hits you for {} damage!", name, dmg));
                 }
             }
@@ -423,7 +560,9 @@ fn process_monsters(
                     log.push(format!("You dodge the {}'s venomous bite!", name));
                 } else {
                     let dmg = player.reduce_damage(damage);
+                    player.last_damage_source = Some((name.to_string(), dmg));
                     player.take_damage(dmg);
+                    player.damage_taken += dmg;
                     player.poison_ticks = poison_ticks;
                     log.push(format!(
                         "The {} bites you for {} damage! Poison courses through your veins!",
@@ -436,7 +575,9 @@ fn process_monsters(
                     log.push(format!("You dodge the {}'s spectral grasp!", name));
                 } else {
                     let dmg = player.reduce_damage(damage);
+                    player.last_damage_source = Some((name.to_string(), dmg));
                     player.take_damage(dmg);
+                    player.damage_taken += dmg;
                     let heal = dmg / 2;
                     monsters[i].hp = (monsters[i].hp + heal).min(monsters[i].max_hp);
                     log.push(format!(
@@ -518,7 +659,9 @@ fn process_monsters(
                                     log.push("You dodge the Goblin's dash attack!".to_string());
                                 } else {
                                     let dmg = player.reduce_damage(damage);
+                                    player.last_damage_source = Some(("Goblin".to_string(), dmg));
                                     player.take_damage(dmg);
+                                    player.damage_taken += dmg;
                                     log.push(format!(
                                         "The Goblin dashes and strikes for {} damage!",
                                         dmg
@@ -638,7 +781,9 @@ fn process_monsters(
                             log.push("You duck under the dragon's breath!".to_string());
                         } else {
                             let dmg = player.reduce_damage(damage);
+                            player.last_damage_source = Some(("Bone Dragon".to_string(), dmg));
                             player.take_damage(dmg);
+                            player.damage_taken += dmg;
                             log.push(format!("Dragon fire engulfs you for {} damage!", dmg));
                         }
                     }
@@ -655,7 +800,9 @@ fn process_monsters(
                         log.push("You resist the shadow pulse!".to_string());
                     } else {
                         let dmg = player.reduce_damage(damage);
+                        player.last_damage_source = Some(("Shadow Lord".to_string(), dmg));
                         player.take_damage(dmg);
+                        player.damage_taken += dmg;
                         log.push(format!("Shadow energy tears at you for {} damage!", dmg));
                     }
                 }
@@ -1381,6 +1528,7 @@ fn main() -> std::io::Result<()> {
                                                             monsters[mi].name, dmg
                                                         ));
                                                         if !monsters[mi].is_alive() {
+                                                            player.monsters_slain += 1;
                                                             monsters[mi].death_pos = Some((
                                                                 monsters[mi].x,
                                                                 monsters[mi].y,
@@ -1464,6 +1612,7 @@ fn main() -> std::io::Result<()> {
                                         }
 
                                         monsters[i].take_damage(damage);
+                                        player.damage_dealt += damage;
                                         log.push(format!(
                                             "You hit the {} for {} damage!",
                                             monsters[i].name, damage
@@ -1480,6 +1629,7 @@ fn main() -> std::io::Result<()> {
                                         }
 
                                         if !monsters[i].is_alive() {
+                                            player.monsters_slain += 1;
                                             log.push(format!("The {} dies!", monsters[i].name));
                                             monsters[i].death_pos =
                                                 Some((monsters[i].x, monsters[i].y));
@@ -1617,6 +1767,7 @@ fn main() -> std::io::Result<()> {
                     if player.poison_ticks > 0 {
                         player.poison_ticks -= 1;
                         player.take_damage(1);
+                        player.damage_taken += 1;
                         log.push("Poison burns in your veins! (-1 HP)".to_string());
                     }
 
@@ -1644,31 +1795,15 @@ fn main() -> std::io::Result<()> {
 
                 // --- DEATH CHECK ---
                 if !player.is_alive() {
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(player.x as u16, player.y as u16),
-                        SetForegroundColor(Color::Red),
-                        Print("X")
-                    )?;
-                    execute!(
-                        stdout,
-                        cursor::MoveTo(0, map_height as u16 + 1),
-                        SetForegroundColor(Color::Red),
-                        Clear(ClearType::UntilNewLine),
-                        Print("YOU DIED! Press 'r' to restart or 'q' to quit.")
-                    )?;
-                    stdout.flush()?;
-                    loop {
-                        if let Event::Key(key_event) = event::read()? {
-                            match key_event.code {
-                                KeyCode::Char('q') | KeyCode::Esc => break 'outer,
-                                KeyCode::Char('r') => {
-                                    log.clear();
-                                    continue 'outer; // Goes back to character creation
-                                }
-                                _ => {}
-                            }
-                        }
+                    if let Some((source, dmg)) = &player.last_damage_source {
+                        player.cause_of_death = format!("{} ({} dmg)", source, dmg);
+                    }
+                    let restart = show_death_screen(&mut stdout, &player, current_floor)?;
+                    if restart {
+                        log.clear();
+                        continue 'outer;
+                    } else {
+                        break 'outer;
                     }
                 }
             }
