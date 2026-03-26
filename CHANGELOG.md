@@ -1,6 +1,6 @@
 # Ironveil Development Changelog
 
-## v0.3.2 — Fog of War & Performance
+## v0.3.2 — Fog of War & Performance & Death Screen
 *2026-03-26*
 
 ### Fog of War
@@ -22,6 +22,13 @@
 
 ### Save/Load
 - Visibility state preserved across save/load
+
+### Death Screen
+- Animated skull appearing line by line on death
+- "YOU HAVE DIED" text flashes 3 times
+- Stats revealed one by one: class, floor reached, monsters slain, damage dealt, damage taken, cause of death
+- [R] Play again / [Q] Quit options
+- Run stats tracked: monsters_slain, damage_dealt, damage_taken, cause_of_death
 
 ---
 

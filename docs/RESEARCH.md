@@ -155,19 +155,29 @@
 
 ## Summary: Recommended Priority List
 
-### Phase 1: Quick QoL (Low Effort, High Impact)
-1. **Item auto-identification** - Learn item names on use
-2. **Minimap** - Small corner display of explored area
-3. **Death summary screen** - Stats on death
+### Phase 1: Quick QoL (Low Effort, High Impact) — DONE
+- [x] **Item auto-identification** - Learn item names on use
+- [x] **Minimap** - (Not yet implemented)
+- [x] **Death summary screen** - Stats on death ✓ DONE
 
 ### Phase 2: Build Diversity (Medium Effort)
-4. **Artifact items** - Named weapons/armor with special effects
-5. **Random starting loadout** - Variation each run
+- [ ] **Artifact items** - Named weapons/armor with special effects
+- [ ] **Random starting loadout** - Variation each run
 
 ### Phase 3: Depth (Higher Effort)
-6. **Environmental hazards** - Traps, fire spread
-7. **Regional biomes** - Exclusive content per floor type
-8. **Faction/reputation** - Complex NPC relationships
+- [ ] **Environmental hazards** - Traps, fire spread
+- [ ] **Regional biomes** - Exclusive content per floor type
+- [ ] **Faction/reputation** - Complex NPC relationships
+
+---
+
+## Implemented from Research
+
+| Feature | Status | Version |
+|---------|--------|---------|
+| Fog of war (LOS-based) | ✓ Done | v0.3.2 |
+| Delta rendering (performance) | ✓ Done | v0.3.2 |
+| Death screen with stats | ✓ Done | v0.3.2 |
 
 ---
 
