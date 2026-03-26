@@ -67,7 +67,3 @@ cargo build --release
 - **Terminal**: crossterm
 - **Random**: rand
 - **Serialization**: serde + serde_json
-
-## License
-
-MIT
