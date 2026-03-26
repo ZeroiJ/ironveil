@@ -922,6 +922,7 @@ fn main() -> std::io::Result<()> {
 
             'inner: loop {
                 // --- RENDER ---
+                render_map(&mut stdout, &map, current_floor)?;
                 render_ui(
                     &mut stdout,
                     map_height,
@@ -1517,6 +1518,7 @@ fn main() -> std::io::Result<()> {
                                         player.x = next_x;
                                         player.y = next_y;
                                         map.update_visibility(player.x, player.y, 8);
+                                        render_map(&mut stdout, &map, current_floor)?;
 
                                         // Check if player stepped on a web
                                         if webs.remove(&(player.x, player.y)) {
