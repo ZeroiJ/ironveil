@@ -45,9 +45,14 @@ fn render_tile(
     stdout: &mut std::io::Stdout,
     tile: Tile,
     floor: i32,
-    _visible: bool,
-    _seen: bool,
+    visible: bool,
+    seen: bool,
 ) -> std::io::Result<()> {
+    if !seen {
+        execute!(stdout, SetForegroundColor(Color::Black), Print(" "))?;
+        return Ok(());
+    }
+
     let (wall_color, floor_color) = if floor <= 3 {
         (Color::Grey, Color::DarkGrey)
     } else if floor <= 6 {
@@ -56,11 +61,28 @@ fn render_tile(
         (Color::DarkRed, Color::DarkMagenta)
     };
 
-    // Fog of war disabled - always show all tiles
+    let (wall_color, floor_color) = if visible {
+        (wall_color, floor_color)
+    } else {
+        let dim_wall = match wall_color {
+            Color::Grey => Color::DarkGrey,
+            Color::DarkYellow => Color::DarkGrey,
+            Color::DarkRed => Color::DarkGrey,
+            _ => Color::DarkGrey,
+        };
+        (dim_wall, Color::Black)
+    };
+
     let color = match tile {
         Tile::Wall => wall_color,
         Tile::Floor => floor_color,
-        Tile::Stairs => Color::White,
+        Tile::Stairs => {
+            if visible {
+                Color::White
+            } else {
+                Color::DarkGrey
+            }
+        }
     };
 
     let glyph = match tile {
@@ -73,9 +95,16 @@ fn render_tile(
     Ok(())
 }
 
-fn render_monsters(stdout: &mut std::io::Stdout, monsters: &[Monster]) -> std::io::Result<()> {
+fn render_monsters(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    monsters: &[Monster],
+) -> std::io::Result<()> {
     for monster in monsters {
         if monster.is_alive() {
+            if !map.current_visibility[monster.x][monster.y] {
+                continue;
+            }
             // Wraiths inside walls are invisible
             if monster.is_phasing {
                 continue;
@@ -144,9 +173,13 @@ fn render_projectiles(
 
 fn render_ground_items(
     stdout: &mut std::io::Stdout,
+    map: &Map,
     ground_items: &HashMap<(usize, usize), Item>,
 ) -> std::io::Result<()> {
     for (&(x, y), item) in ground_items {
+        if !map.current_visibility[x][y] {
+            continue;
+        }
         let color = match item.item_type {
             ItemType::Weapon => Color::Cyan,
             ItemType::Armor => Color::DarkYellow,
@@ -165,9 +198,13 @@ fn render_ground_items(
 
 fn render_webs(
     stdout: &mut std::io::Stdout,
+    map: &Map,
     webs: &std::collections::HashSet<(usize, usize)>,
 ) -> std::io::Result<()> {
     for &(x, y) in webs {
+        if !map.current_visibility[x][y] {
+            continue;
+        }
         execute!(
             stdout,
             cursor::MoveTo(x as u16, y as u16),
@@ -894,9 +931,9 @@ fn main() -> std::io::Result<()> {
                     player.x,
                     player.y,
                 )?;
-                render_webs(&mut stdout, &webs)?;
-                render_ground_items(&mut stdout, &ground_items)?;
-                render_monsters(&mut stdout, &monsters)?;
+                render_webs(&mut stdout, &map, &webs)?;
+                render_ground_items(&mut stdout, &map, &ground_items)?;
+                render_monsters(&mut stdout, &map, &monsters)?;
                 render_projectiles(&mut stdout, &projectiles)?;
 
                 // Player pulse effect - toggle between White and Yellow
@@ -974,6 +1011,7 @@ fn main() -> std::io::Result<()> {
                                             }
                                             current_floor = data.current_floor;
                                             log = data.log;
+                                            map.update_visibility(player.x, player.y, 8);
                                             execute!(stdout, Clear(ClearType::All))?;
                                             render_map(&mut stdout, &map, current_floor)?;
                                             log.push("Game loaded!".to_string());

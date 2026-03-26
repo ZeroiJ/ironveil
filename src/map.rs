@@ -109,32 +109,45 @@ impl Map {
         }
     }
 
-    /// Reveal circular area around player position.
+    /// Reveal circular area around player position with line-of-sight.
     pub fn reveal_area(&mut self, px: usize, py: usize, radius: i32) {
-        let px = px as i32;
-        let py = py as i32;
-        let r = radius;
-        let r2 = r * r;
-
-        // Clear and rebuild current visibility
-        for y in 0..self.height {
-            for x in 0..self.width {
+        // Reset current visibility
+        for x in 0..self.width {
+            for y in 0..self.height {
                 self.current_visibility[x][y] = false;
             }
         }
 
-        // Check every tile in the map - if within radius, reveal it
-        for y in 0..self.height {
-            for x in 0..self.width {
-                let dx = x as i32 - px;
-                let dy = y as i32 - py;
-                let dist2 = dx * dx + dy * dy;
+        let r = radius;
+        let px_i = px as i32;
+        let py_i = py as i32;
 
-                if dist2 <= r2 {
-                    self.current_visibility[x][y] = true;
-                    self.visibility[x][y] = true;
+        for dx in -r..=r {
+            for dy in -r..=r {
+                if dx * dx + dy * dy > r * r {
+                    continue;
+                }
+                let tx = px_i + dx;
+                let ty = py_i + dy;
+                if tx < 0 || ty < 0 {
+                    continue;
+                }
+                let tx = tx as usize;
+                let ty = ty as usize;
+                if tx >= self.width || ty >= self.height {
+                    continue;
+                }
+                if self.has_line_of_sight(px, py, tx, ty) {
+                    self.current_visibility[tx][ty] = true;
+                    self.visibility[tx][ty] = true;
                 }
             }
+        }
+
+        // Player tile always visible
+        if px < self.width && py < self.height {
+            self.current_visibility[px][py] = true;
+            self.visibility[px][py] = true;
         }
     }
 
