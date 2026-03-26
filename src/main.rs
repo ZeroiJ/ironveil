@@ -41,6 +41,28 @@ fn render_map(stdout: &mut std::io::Stdout, map: &Map, floor: i32) -> std::io::R
     Ok(())
 }
 
+fn render_map_delta(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    floor: i32,
+    prev_visibility: &mut Vec<Vec<bool>>,
+) -> std::io::Result<()> {
+    for x in 0..map.width {
+        for y in 0..map.height {
+            let now_visible = map.current_visibility[x][y];
+            let now_explored = map.visibility[x][y];
+            let was_visible = prev_visibility[x][y];
+
+            if now_visible != was_visible {
+                execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
+                render_tile(stdout, map.tiles[x][y], floor, now_visible, now_explored)?;
+                prev_visibility[x][y] = now_visible;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn render_tile(
     stdout: &mut std::io::Stdout,
     tile: Tile,
@@ -859,6 +881,9 @@ fn main() -> std::io::Result<()> {
                 m
             };
 
+            // Delta visibility tracking for efficient fog of war rendering
+            let mut prev_visibility: Vec<Vec<bool>> = vec![vec![false; map.height]; map.width];
+
             let mut monsters = map.spawn_monsters_for_floor(current_floor);
             let mut projectiles: Vec<Projectile> = Vec::new();
             let mut ground_items = map.spawn_ground_items(current_floor);
@@ -922,7 +947,6 @@ fn main() -> std::io::Result<()> {
 
             'inner: loop {
                 // --- RENDER ---
-                render_map(&mut stdout, &map, current_floor)?;
                 render_ui(
                     &mut stdout,
                     map_height,
@@ -1518,7 +1542,12 @@ fn main() -> std::io::Result<()> {
                                         player.x = next_x;
                                         player.y = next_y;
                                         map.update_visibility(player.x, player.y, 8);
-                                        render_map(&mut stdout, &map, current_floor)?;
+                                        render_map_delta(
+                                            &mut stdout,
+                                            &map,
+                                            current_floor,
+                                            &mut prev_visibility,
+                                        )?;
 
                                         // Check if player stepped on a web
                                         if webs.remove(&(player.x, player.y)) {
