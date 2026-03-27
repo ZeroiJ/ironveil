@@ -1,4 +1,5 @@
 use crate::items::{ArtifactEffect, Item, ItemType};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
 // --- Ability System ---
@@ -180,18 +181,24 @@ impl Class {
                 dex: 10,
                 int: 8,
                 con: 14,
+                crit_chance: 0,
+                crit_multiplier: 1.5,
             },
             Class::Rogue => Stats {
                 str_: 10,
                 dex: 14,
                 int: 10,
                 con: 10,
+                crit_chance: 4,
+                crit_multiplier: 1.5,
             },
             Class::Mage => Stats {
                 str_: 8,
                 dex: 10,
                 int: 14,
                 con: 8,
+                crit_chance: 0,
+                crit_multiplier: 1.5,
             },
         }
     }
@@ -205,6 +212,8 @@ pub struct Stats {
     pub dex: i32,
     pub int: i32,
     pub con: i32,
+    pub crit_chance: i32,     // Base crit chance from DEX (0-100)
+    pub crit_multiplier: f32, // Crit damage multiplier (1.5 = 150%)
 }
 
 impl Stats {
@@ -226,6 +235,16 @@ impl Stats {
     /// INT potion healing bonus: +1 per 2 INT above 10.
     pub fn potion_bonus(&self) -> i32 {
         ((self.int - 10) / 2).max(0)
+    }
+
+    /// CRIT chance from DEX: 1% per DEX above 10.
+    pub fn crit_chance(&self) -> i32 {
+        ((self.dex - 10) * 1).max(0)
+    }
+
+    /// CRIT multiplier: base 150% (1.5x damage).
+    pub fn crit_multiplier(&self) -> f32 {
+        self.crit_multiplier
     }
 }
 
@@ -365,10 +384,30 @@ impl Player {
             dex: self.base_stats.dex + rd,
             int: self.base_stats.int + ri,
             con: self.base_stats.con + rc,
+            crit_chance: self.base_stats.crit_chance,
+            crit_multiplier: self.base_stats.crit_multiplier,
         }
     }
 
-    /// Total melee damage: base 1 (fist) + weapon bonus + STR modifier + ragefang stacks + wraithwalkers buff.
+    /// Check for critical hit. Returns true if crit lands.
+    pub fn roll_crit(&self) -> bool {
+        let stats = self.effective_stats();
+        let chance = stats.crit_chance();
+        if chance <= 0 {
+            return false;
+        }
+        let mut rng = rand::rng();
+        rng.random_range(0..100) < chance
+    }
+
+    /// Apply damage variance (±10%) to incoming damage value.
+    pub fn apply_damage_variance(damage: i32) -> i32 {
+        let mut rng = rand::rng();
+        let variance: f32 = rng.random_range(90..111) as f32 / 100.0;
+        (damage as f32 * variance) as i32
+    }
+
+    /// Total melee damage: base 1 + weapon + STR + artifacts + crit + variance.
     pub fn melee_damage(&self) -> i32 {
         let stats = self.effective_stats();
         let mut damage = 1 + self.equipment.weapon_damage() + stats.str_modifier();
@@ -376,6 +415,10 @@ impl Player {
         if self.wraithwalkers_buff {
             damage *= 2;
         }
+        if self.roll_crit() {
+            damage = (damage as f32 * stats.crit_multiplier()) as i32;
+        }
+        damage = Self::apply_damage_variance(damage);
         damage.max(1)
     }
 
@@ -391,7 +434,6 @@ impl Player {
             return false;
         }
         let mut rng = rand::rng();
-        use rand::RngExt;
         rng.random_range(0..100) < chance
     }
 

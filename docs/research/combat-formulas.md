@@ -275,6 +275,60 @@ fn calculate_damage(attacker: &Attacker, defender: &Defender, skill: &Skill) -> 
 
 ---
 
+## 9. Implementation Summary (v0.4.0)
+
+The following recommendations from this research were implemented:
+
+### Implemented
+
+| Feature | Implementation | Status |
+|---------|----------------|--------|
+| Critical Hits | DEX-based crit chance (1% per DEX above 10), 150% base multiplier | ✅ |
+| Rogue Crit Bonus | Rogue starts with 4% base crit chance | ✅ |
+| Damage Variance | ±10% randomization applied to all melee damage | ✅ |
+| Combat Log Updates | "CRITICAL!" shown on crit hits | ✅ |
+
+### Implementation Details
+
+**Stats struct changes:**
+```rust
+pub struct Stats {
+    pub crit_chance: i32,     // Base crit chance from DEX
+    pub crit_multiplier: f32, // Crit damage multiplier (1.5 = 150%)
+}
+
+impl Stats {
+    pub fn crit_chance(&self) -> i32 {
+        ((self.dex - 10) * 1).max(0)
+    }
+    
+    pub fn crit_multiplier(&self) -> f32 {
+        self.crit_multiplier  // Base 1.5 (150%)
+    }
+}
+```
+
+**Player melee damage formula:**
+```
+damage = (1 + weapon_damage + STR_mod + ragefang_stacks) × crit_multiplier × variance
+variance = random(0.9, 1.1)
+```
+
+**Class starting crit:**
+- Warrior: 0% (can gain from DEX gear)
+- Rogue: 4% (high DEX start)
+- Mage: 0% (can gain from DEX gear)
+
+### Not Implemented (Future)
+
+| Feature | Reason |
+|---------|--------|
+| Elemental System | Too complex for ASCII roguelike scope |
+| Defense Percentage Scaling | Current subtraction works fine |
+| Player Attack Speed | Doesn't fit instant-move model |
+
+---
+
 ## References
 
 - Diablo 4 Damage Formula (Maxroll)

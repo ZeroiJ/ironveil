@@ -3,6 +3,12 @@
 ## v0.4.0 — Artifacts, Minimap & Boss Updates
 *2026-03-27*
 
+### Combat System Updates
+- Critical hit system: DEX-based crit chance (1% per DEX above 10), 150% crit multiplier
+- Rogue starts with 4% base crit chance
+- Damage variance: ±10% randomization on all melee damage
+- Combat log now shows "CRITICAL!" on crit hits
+
 ### Artifact Items
 - Added 9 artifact items with unique passive effects (marked with `* Name *`)
 - Artifacts are class-specific, drop from bosses and rare floor 6+ kills
