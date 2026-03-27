@@ -202,11 +202,15 @@ fn render_ground_items(
         if !map.current_visibility[x][y] {
             continue;
         }
-        let color = match item.item_type {
-            ItemType::Weapon => Color::Cyan,
-            ItemType::Armor => Color::DarkYellow,
-            ItemType::Ring => Color::Yellow,
-            ItemType::Potion => Color::Magenta,
+        let color = if item.is_artifact {
+            Color::Yellow
+        } else {
+            match item.item_type {
+                ItemType::Weapon => Color::Cyan,
+                ItemType::Armor => Color::DarkYellow,
+                ItemType::Ring => Color::Yellow,
+                ItemType::Potion => Color::Magenta,
+            }
         };
         execute!(
             stdout,
@@ -215,6 +219,271 @@ fn render_ground_items(
             Print(item.symbol)
         )?;
     }
+    Ok(())
+}
+
+fn render_minimap(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    player_x: usize,
+    player_y: usize,
+    term_width: u16,
+    map_height: usize,
+) -> std::io::Result<()> {
+    let mini_w: usize = 30;
+    let mini_h: usize = 15;
+
+    let scale_x = map.width as f32 / mini_w as f32;
+    let scale_y = map.height as f32 / mini_h as f32;
+
+    let start_col = (term_width as usize).saturating_sub(mini_w + 2) as u16;
+    let start_row = map_height.saturating_sub(mini_h + 1) as u16;
+
+    execute!(
+        stdout,
+        cursor::MoveTo(start_col - 1, start_row - 1),
+        SetForegroundColor(Color::DarkGrey),
+        Print(format!("+{}+", "-".repeat(mini_w)))
+    )?;
+
+    for my in 0..mini_h {
+        execute!(
+            stdout,
+            cursor::MoveTo(start_col - 1, start_row + my as u16),
+            SetForegroundColor(Color::DarkGrey),
+            Print("|")
+        )?;
+        execute!(
+            stdout,
+            cursor::MoveTo(start_col + mini_w as u16, start_row + my as u16),
+            SetForegroundColor(Color::DarkGrey),
+            Print("|")
+        )?;
+    }
+    execute!(
+        stdout,
+        cursor::MoveTo(start_col - 1, start_row + mini_h as u16),
+        SetForegroundColor(Color::DarkGrey),
+        Print(format!("+{}+", "-".repeat(mini_w)))
+    )?;
+
+    let mut stairs_mini: Option<(usize, usize)> = None;
+    for x in 0..map.width {
+        for y in 0..map.height {
+            if map.tiles[x][y] == Tile::Stairs && map.visibility[x][y] {
+                let mx = (x as f32 / scale_x) as usize;
+                let my = (y as f32 / scale_y) as usize;
+                stairs_mini = Some((mx.min(mini_w - 1), my.min(mini_h - 1)));
+            }
+        }
+    }
+
+    for my in 0..mini_h {
+        for mx in 0..mini_w {
+            let real_x = (mx as f32 * scale_x) as usize;
+            let real_y = (my as f32 * scale_y) as usize;
+
+            let col = start_col + mx as u16;
+            let row = start_row + my as u16;
+
+            execute!(stdout, cursor::MoveTo(col, row))?;
+
+            let player_mx = (player_x as f32 / scale_x) as usize;
+            let player_my = (player_y as f32 / scale_y) as usize;
+
+            if mx == player_mx.min(mini_w - 1) && my == player_my.min(mini_h - 1) {
+                execute!(stdout, SetForegroundColor(Color::White), Print("@"))?;
+                continue;
+            }
+
+            if let Some((sx, sy)) = stairs_mini {
+                if mx == sx && my == sy {
+                    execute!(stdout, SetForegroundColor(Color::Yellow), Print(">"))?;
+                    continue;
+                }
+            }
+
+            if real_x < map.width && real_y < map.height && map.visibility[real_x][real_y] {
+                let (glyph, color) = match map.tiles[real_x][real_y] {
+                    Tile::Wall => ("#", Color::DarkGrey),
+                    Tile::Floor | Tile::Stairs => (".", Color::Black),
+                };
+
+                let color = if map.current_visibility[real_x][real_y] {
+                    match map.tiles[real_x][real_y] {
+                        Tile::Wall => Color::Grey,
+                        _ => Color::DarkGrey,
+                    }
+                } else {
+                    color
+                };
+
+                execute!(stdout, SetForegroundColor(color), Print(glyph))?;
+            } else {
+                execute!(stdout, SetForegroundColor(Color::Black), Print(" "))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn show_boss_intro(
+    stdout: &mut std::io::Stdout,
+    floor: i32,
+    term_width: u16,
+    term_height: u16,
+) -> std::io::Result<()> {
+    let cx = (term_width / 2) as u16;
+    let cy = (term_height / 2) as u16;
+
+    for row in cy - 8..cy + 6 {
+        execute!(
+            stdout,
+            cursor::MoveTo(cx - 20, row),
+            SetForegroundColor(Color::Black),
+            Print(" ".repeat(40))
+        )?;
+    }
+
+    match floor {
+        5 => {
+            let art = vec![
+                ("    /\\  K  /\\    ", Color::Yellow),
+                ("   /  \\_^_/  \\   ", Color::Yellow),
+                ("  |  (o) (o)  |  ", Color::Yellow),
+                ("   \\  \\___/  /   ", Color::Yellow),
+                ("    |  |||  |    ", Color::DarkYellow),
+                ("   _|__|_|__|_   ", Color::DarkYellow),
+                ("  g . . . . . g  ", Color::Green),
+            ];
+            let title = "*** THE GOBLIN KING ***";
+            let subtitle = "His crown gleams with stolen gold...";
+
+            for (i, (line, color)) in art.iter().enumerate() {
+                execute!(
+                    stdout,
+                    cursor::MoveTo(cx - 10, cy - 7 + i as u16),
+                    SetForegroundColor(*color),
+                    Print(line)
+                )?;
+                stdout.flush()?;
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 12, cy + 2),
+                SetForegroundColor(Color::Yellow),
+                Print(title)
+            )?;
+            stdout.flush()?;
+            std::thread::sleep(Duration::from_millis(200));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 18, cy + 4),
+                SetForegroundColor(Color::DarkGrey),
+                Print(subtitle)
+            )?;
+        }
+        10 => {
+            let art = vec![
+                ("    __        __   ", Color::DarkRed),
+                ("   /  \\  D  /  \\  ", Color::DarkRed),
+                ("--( )--^^^--( )--  ", Color::DarkRed),
+                ("   \\__|___|__/     ", Color::DarkRed),
+                ("       |||         ", Color::DarkRed),
+                ("      /   \\        ", Color::DarkRed),
+                (" ~~~~fire~~~~      ", Color::Red),
+            ];
+            let title = "*** THE BONE DRAGON ***";
+            let subtitle = "Ancient bones creak in the darkness...";
+
+            for (i, (line, color)) in art.iter().enumerate() {
+                execute!(
+                    stdout,
+                    cursor::MoveTo(cx - 10, cy - 7 + i as u16),
+                    SetForegroundColor(*color),
+                    Print(line)
+                )?;
+                stdout.flush()?;
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 12, cy + 2),
+                SetForegroundColor(Color::DarkRed),
+                Print(title)
+            )?;
+            stdout.flush()?;
+            std::thread::sleep(Duration::from_millis(200));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 20, cy + 4),
+                SetForegroundColor(Color::DarkGrey),
+                Print(subtitle)
+            )?;
+        }
+        _ => {
+            let art = vec![
+                ("   *   \\|/   *    ", Color::Magenta),
+                ("  *  --[S]--  *   ", Color::Magenta),
+                ("   *   /|\\   *    ", Color::Magenta),
+                ("  * *  | |  * *   ", Color::DarkMagenta),
+                ("      (   )       ", Color::DarkMagenta),
+                ("  ~shadow pools~  ", Color::DarkGrey),
+                (" * * darkness * * ", Color::DarkGrey),
+            ];
+            let title = "*** THE SHADOW LORD ***";
+            let subtitle = "Darkness pulses from every corner...";
+
+            for (i, (line, color)) in art.iter().enumerate() {
+                execute!(
+                    stdout,
+                    cursor::MoveTo(cx - 10, cy - 7 + i as u16),
+                    SetForegroundColor(*color),
+                    Print(line)
+                )?;
+                stdout.flush()?;
+                std::thread::sleep(Duration::from_millis(120));
+            }
+            std::thread::sleep(Duration::from_millis(300));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 12, cy + 2),
+                SetForegroundColor(Color::Magenta),
+                Print(title)
+            )?;
+            stdout.flush()?;
+            std::thread::sleep(Duration::from_millis(200));
+            execute!(
+                stdout,
+                cursor::MoveTo(cx - 20, cy + 4),
+                SetForegroundColor(Color::DarkGrey),
+                Print(subtitle)
+            )?;
+        }
+    }
+
+    stdout.flush()?;
+    std::thread::sleep(Duration::from_millis(400));
+    execute!(
+        stdout,
+        cursor::MoveTo(cx - 14, cy + 6),
+        SetForegroundColor(Color::DarkGrey),
+        Print("[ press any key to face your fate ]")
+    )?;
+    stdout.flush()?;
+
+    loop {
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(_) = event::read()? {
+                break;
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -543,12 +812,26 @@ fn process_monsters(
                 // Player dodge check
                 if player.try_dodge() {
                     log.push(format!("You dodge the {}'s attack!", name));
+                    if player.has_wraithwalkers() {
+                        player.activate_damage_buff();
+                        log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                    }
                 } else {
                     let dmg = player.reduce_damage(damage);
                     player.last_damage_source = Some((name.to_string(), dmg));
-                    player.take_damage(dmg);
+                    player.take_damage(damage);
                     player.damage_taken += dmg;
                     log.push(format!("The {} hits you for {} damage!", name, dmg));
+
+                    // Stonehide Plate: trigger below 30% HP
+                    if !player.stonehide_triggered && player.has_stonehide() {
+                        let hp_pct = player.hp * 100 / player.max_hp;
+                        if hp_pct <= 30 {
+                            player.stonehide_triggered = true;
+                            player.stonehide_bonus = 3;
+                            log.push("Stonehide Plate activates! +3 DEF permanently!".to_string());
+                        }
+                    }
                 }
             }
             MonsterAction::PoisonAttack {
@@ -558,6 +841,10 @@ fn process_monsters(
             } => {
                 if player.try_dodge() {
                     log.push(format!("You dodge the {}'s venomous bite!", name));
+                    if player.has_wraithwalkers() {
+                        player.activate_damage_buff();
+                        log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                    }
                 } else {
                     let dmg = player.reduce_damage(damage);
                     player.last_damage_source = Some((name.to_string(), dmg));
@@ -573,6 +860,10 @@ fn process_monsters(
             MonsterAction::DrainAttack { damage, ref name } => {
                 if player.try_dodge() {
                     log.push(format!("You dodge the {}'s spectral grasp!", name));
+                    if player.has_wraithwalkers() {
+                        player.activate_damage_buff();
+                        log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                    }
                 } else {
                     let dmg = player.reduce_damage(damage);
                     player.last_damage_source = Some((name.to_string(), dmg));
@@ -657,6 +948,10 @@ fn process_monsters(
                                 let damage = monsters[i].attack;
                                 if player.try_dodge() {
                                     log.push("You dodge the Goblin's dash attack!".to_string());
+                                    if player.has_wraithwalkers() {
+                                        player.activate_damage_buff();
+                                        log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                                    }
                                 } else {
                                     let dmg = player.reduce_damage(damage);
                                     player.last_damage_source = Some(("Goblin".to_string(), dmg));
@@ -779,6 +1074,10 @@ fn process_monsters(
                     if ux == player.x && uy == player.y {
                         if player.try_dodge() {
                             log.push("You duck under the dragon's breath!".to_string());
+                            if player.has_wraithwalkers() {
+                                player.activate_damage_buff();
+                                log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                            }
                         } else {
                             let dmg = player.reduce_damage(damage);
                             player.last_damage_source = Some(("Bone Dragon".to_string(), dmg));
@@ -798,6 +1097,10 @@ fn process_monsters(
                 if dist_to_player <= radius {
                     if player.try_dodge() {
                         log.push("You resist the shadow pulse!".to_string());
+                        if player.has_wraithwalkers() {
+                            player.activate_damage_buff();
+                            log.push("Wraithwalkers! Next hit = 2x dmg!".to_string());
+                        }
                     } else {
                         let dmg = player.reduce_damage(damage);
                         player.last_damage_source = Some(("Shadow Lord".to_string(), dmg));
@@ -1075,19 +1378,22 @@ fn main() -> std::io::Result<()> {
 
             log.push(format!("Welcome to floor {}!", current_floor));
 
-            // Boss floor announcement
             match current_floor {
-                5 => {
-                    log.push("*** THE GOBLIN KING GUARDS THE WAY! ***".to_string());
-                    log.push("Defeat him to descend deeper...".to_string());
-                }
-                10 => {
-                    log.push("*** THE BONE DRAGON AWAITS! ***".to_string());
-                    log.push("Its fiery breath fills the chamber...".to_string());
-                }
-                15 => {
-                    log.push("*** THE SHADOW LORD HAS COME! ***".to_string());
-                    log.push("Darkness pulses from every corner...".to_string());
+                5 | 10 | 15 => {
+                    execute!(stdout, Clear(ClearType::All))?;
+                    let (tw, th) = terminal::size()?;
+                    show_boss_intro(&mut stdout, current_floor, tw, th)?;
+                    execute!(stdout, Clear(ClearType::All))?;
+                    render_map(&mut stdout, &map, current_floor)?;
+                    prev_visibility = vec![vec![false; map.height]; map.width];
+                    log.push(
+                        match current_floor {
+                            5 => "The Goblin King awaits!",
+                            10 => "The Bone Dragon stirs!",
+                            _ => "The Shadow Lord has come!",
+                        }
+                        .to_string(),
+                    );
                 }
                 _ => {}
             }
@@ -1107,6 +1413,14 @@ fn main() -> std::io::Result<()> {
                 render_ground_items(&mut stdout, &map, &ground_items)?;
                 render_monsters(&mut stdout, &map, &monsters)?;
                 render_projectiles(&mut stdout, &projectiles)?;
+                render_minimap(
+                    &mut stdout,
+                    &map,
+                    player.x,
+                    player.y,
+                    term_width,
+                    map_height,
+                )?;
 
                 // Player pulse effect - toggle between White and Yellow
                 let pulse_on =
@@ -1186,6 +1500,14 @@ fn main() -> std::io::Result<()> {
                                             map.update_visibility(player.x, player.y, 8);
                                             execute!(stdout, Clear(ClearType::All))?;
                                             render_map(&mut stdout, &map, current_floor)?;
+                                            render_minimap(
+                                                &mut stdout,
+                                                &map,
+                                                player.x,
+                                                player.y,
+                                                term_width,
+                                                map_height,
+                                            )?;
                                             log.push("Game loaded!".to_string());
                                         }
                                         Err(e) => log.push(format!("Load failed: {}", e)),
@@ -1197,6 +1519,14 @@ fn main() -> std::io::Result<()> {
                                     // Redraw everything after closing inventory
                                     execute!(stdout, Clear(ClearType::All))?;
                                     render_map(&mut stdout, &map, current_floor)?;
+                                    render_minimap(
+                                        &mut stdout,
+                                        &map,
+                                        player.x,
+                                        player.y,
+                                        term_width,
+                                        map_height,
+                                    )?;
                                     // Reset monster tick so they don't all act immediately
                                     last_monster_tick = Instant::now();
                                     continue 'inner;
@@ -1644,6 +1974,44 @@ fn main() -> std::io::Result<()> {
                                                 log.push(msg);
                                             }
 
+                                            // Random artifact drop (3% chance, floor 6+)
+                                            if player.has_ragefang() {
+                                                if player.ragefang_stacks < 5 {
+                                                    player.ragefang_stacks += 1;
+                                                }
+                                                player.ragefang_ticks = 3;
+                                                log.push(format!(
+                                                    "Ragefang pulses! (+{} ATK)",
+                                                    player.ragefang_stacks
+                                                ));
+                                            }
+
+                                            if player.has_mindfire() {
+                                                player.mindfire_kill_count += 1;
+                                                if player.mindfire_kill_count >= 10 {
+                                                    player.mindfire_kill_count = 0;
+                                                    player.mindfire_ready = true;
+                                                    log.push(
+                                                        "Mindfire Crown blazes! Next ability = 2x dmg!"
+                                                            .to_string(),
+                                                    );
+                                                }
+                                            }
+
+                                            // Random artifact drop (3% chance, floor 6+)
+                                            if current_floor >= 6 {
+                                                let mut rng = rand::rng();
+                                                if rng.random_range(0..100) < 3 {
+                                                    let artifact =
+                                                        items::random_artifact(player.class.name());
+                                                    log.push(format!(
+                                                        "A glowing artifact falls: {}!",
+                                                        artifact.display_name()
+                                                    ));
+                                                    ground_items.insert(dpos, artifact);
+                                                }
+                                            }
+
                                             // Monster drop (~30%)
                                             let mut rng = rand::rng();
                                             if rng.random_range(0..100) < 30 {
@@ -1675,6 +2043,20 @@ fn main() -> std::io::Result<()> {
                                                     dpos.0.saturating_sub(1)
                                                 };
                                                 ground_items.insert((bx, dpos.1), boss_drop);
+
+                                                // Boss always drops a class artifact
+                                                let artifact =
+                                                    items::random_artifact(player.class.name());
+                                                log.push(format!(
+                                                    "A legendary artifact appears: {}!",
+                                                    artifact.display_name()
+                                                ));
+                                                let ba_x = if bx + 1 < map.width {
+                                                    bx + 1
+                                                } else {
+                                                    bx.saturating_sub(1)
+                                                };
+                                                ground_items.insert((ba_x, dpos.1), artifact);
                                             }
                                         }
                                     }
@@ -1697,6 +2079,14 @@ fn main() -> std::io::Result<()> {
                                             &map,
                                             current_floor,
                                             &mut prev_visibility,
+                                        )?;
+                                        render_minimap(
+                                            &mut stdout,
+                                            &map,
+                                            player.x,
+                                            player.y,
+                                            term_width,
+                                            map_height,
                                         )?;
 
                                         // Check if player stepped on a web

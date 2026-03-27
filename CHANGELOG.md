@@ -1,5 +1,47 @@
 # Ironveil Development Changelog
 
+## v0.4.0 — Artifacts, Minimap & Boss Updates
+*2026-03-27*
+
+### Artifact Items
+- Added 9 artifact items with unique passive effects (marked with `* Name *`)
+- Artifacts are class-specific, drop from bosses and rare floor 6+ kills
+- **Warrior**: Ragefang (kill = +1 ATK stacks), Stonehide Plate (+3 DEF at low HP), Warlord Signet (War Cry bonus)
+- **Rogue**: Shadowfang (ShadowStep crits), Wraithwalkers (+15% dodge, counterattack), Venomcoil (Poison Blade boost)
+- **Mage**: Stormcaller Staff (Chain Lightning boost), Frostweave Robe (Frost Nova boost), Mindfire Crown (ability damage multiplier)
+- Artifacts render Yellow on the ground, displayed with asterisks in inventory
+
+### Named Unique Items
+- Added 9 named items with better stats than regular drops
+- Shadow Slicer (+4 dmg, +1 DEX), Bone Crusher (+6 dmg, +2 STR), Spellbound Staff (+3 dmg, +4 INT)
+- Veteran's Plate (+5 def, +2 CON), Swiftboots (+1 def, +4 DEX), Sage's Robe (+2 def, +3 INT)
+- Lion's Amulet (+4 STR), Eagle's Eye (+4 DEX), Dragon Heart (+4 CON)
+- Floor-gated spawning (floor 4+ and 5+)
+
+### Minimap
+- 30x15 character minimap in bottom-right corner
+- Shows explored tiles only (fog of war respected)
+- Player `@` always visible, stairs `>` shown when explored
+- Currently visible areas shown brighter than explored-but-hidden
+
+### Boss Room Generation
+- Last room now always a large open arena (18-24 wide × 12-16 tall)
+- Boss room connected to previous room via tunnels
+- Stairs placed in center of boss room
+
+### Boss ASCII Intro
+- Boss floors (5, 10, 15+) show ASCII art intro before battle
+- Goblin King: crown art with gold/yellow colors
+- Bone Dragon: dragon art with fire breath
+- Shadow Lord: shadow entity art with darkness
+- Typewriter animation effect, waits for keypress before fight
+
+### Boss Scaling
+- Bosses now spawn every 5 floors (5, 10, 15, 20, 25...)
+- All floors 15+ use Shadow Lord boss
+
+---
+
 ## v0.3.2 — Fog of War & Performance & Death Screen
 *2026-03-26*
 

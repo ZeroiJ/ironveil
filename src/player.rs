@@ -1,4 +1,4 @@
-use crate::items::{Item, ItemType};
+use crate::items::{ArtifactEffect, Item, ItemType};
 use serde::{Deserialize, Serialize};
 
 // --- Ability System ---
@@ -296,6 +296,14 @@ pub struct Player {
     pub xp_to_next_level: i32,
     // Status effects
     pub poison_ticks: i32,
+    // Artifact state
+    pub ragefang_stacks: i32,
+    pub ragefang_ticks: i32,
+    pub stonehide_triggered: bool,
+    pub stonehide_bonus: i32,
+    pub wraithwalkers_buff: bool,
+    pub mindfire_kill_count: i32,
+    pub mindfire_ready: bool,
     // Death stats
     pub monsters_slain: u32,
     pub damage_dealt: i32,
@@ -334,6 +342,13 @@ impl Player {
             level: 1,
             xp_to_next_level: 50,
             poison_ticks: 0,
+            ragefang_stacks: 0,
+            ragefang_ticks: 0,
+            stonehide_triggered: false,
+            stonehide_bonus: 0,
+            wraithwalkers_buff: false,
+            mindfire_kill_count: 0,
+            mindfire_ready: false,
             monsters_slain: 0,
             damage_dealt: 0,
             damage_taken: 0,
@@ -353,21 +368,25 @@ impl Player {
         }
     }
 
-    /// Total melee damage: base 1 (fist) + weapon bonus + STR modifier.
+    /// Total melee damage: base 1 (fist) + weapon bonus + STR modifier + ragefang stacks + wraithwalkers buff.
     pub fn melee_damage(&self) -> i32 {
         let stats = self.effective_stats();
-        (1 + self.equipment.weapon_damage() + stats.str_modifier()).max(1)
+        let mut damage = 1 + self.equipment.weapon_damage() + stats.str_modifier();
+        damage += self.ragefang_stacks;
+        if self.wraithwalkers_buff {
+            damage *= 2;
+        }
+        damage.max(1)
     }
 
     /// Incoming damage reduction from armor. Minimum 1 damage always gets through.
     pub fn reduce_damage(&self, raw_damage: i32) -> i32 {
-        (raw_damage - self.equipment.armor_defense()).max(1)
+        (raw_damage - self.equipment.armor_defense() - self.stonehide_bonus).max(1)
     }
 
     /// Dodge check. Returns true if the attack is dodged.
     pub fn try_dodge(&self) -> bool {
-        let stats = self.effective_stats();
-        let chance = stats.dodge_chance();
+        let chance = self.effective_dodge_chance();
         if chance <= 0 {
             return false;
         }
@@ -480,7 +499,7 @@ impl Player {
         self.hp = self.max_hp;
     }
 
-    /// Tick ability cooldowns. Called each monster tick.
+    /// Tick ability cooldowns and artifact states. Called each monster tick.
     pub fn tick_abilities(&mut self) {
         if let Some(ref mut a) = self.ability_1 {
             a.tick();
@@ -488,6 +507,100 @@ impl Player {
         if let Some(ref mut a) = self.ability_2 {
             a.tick();
         }
+
+        if self.ragefang_ticks > 0 {
+            self.ragefang_ticks -= 1;
+            if self.ragefang_ticks == 0 {
+                self.ragefang_stacks = 0;
+            }
+        }
+
+        if self.wraithwalkers_buff {
+            self.wraithwalkers_buff = false;
+        }
+    }
+
+    pub fn has_ragefang(&self) -> bool {
+        self.equipment
+            .weapon
+            .as_ref()
+            .map_or(false, |w| w.artifact_effect == ArtifactEffect::Ragefang)
+    }
+
+    pub fn has_stonehide(&self) -> bool {
+        self.equipment.armor.as_ref().map_or(false, |a| {
+            a.artifact_effect == ArtifactEffect::StonehidePlate
+        })
+    }
+
+    pub fn has_wraithwalkers(&self) -> bool {
+        self.equipment.armor.as_ref().map_or(false, |a| {
+            a.artifact_effect == ArtifactEffect::Wraithwalkers
+        })
+    }
+
+    pub fn has_mindfire(&self) -> bool {
+        self.equipment.ring.as_ref().map_or(false, |r| {
+            r.artifact_effect == ArtifactEffect::MindFireCrown
+        })
+    }
+
+    pub fn has_shadowfang(&self) -> bool {
+        self.equipment
+            .weapon
+            .as_ref()
+            .map_or(false, |w| w.artifact_effect == ArtifactEffect::Shadowfang)
+    }
+
+    pub fn activate_damage_buff(&mut self) {
+        self.wraithwalkers_buff = true;
+    }
+
+    pub fn effective_dodge_chance(&self) -> i32 {
+        let stats = self.effective_stats();
+        let base = stats.dodge_chance();
+        if self.has_wraithwalkers() {
+            base + 15
+        } else {
+            base
+        }
+    }
+
+    pub fn has_warlord_signet(&self) -> bool {
+        self.equipment.ring.as_ref().map_or(false, |r| {
+            r.artifact_effect == ArtifactEffect::WarlordSignet
+        })
+    }
+
+    pub fn has_venomcoil(&self) -> bool {
+        self.equipment
+            .ring
+            .as_ref()
+            .map_or(false, |r| r.artifact_effect == ArtifactEffect::Venomcoil)
+    }
+
+    pub fn has_stormcaller(&self) -> bool {
+        self.equipment.weapon.as_ref().map_or(false, |w| {
+            w.artifact_effect == ArtifactEffect::StormcallerStaff
+        })
+    }
+
+    pub fn has_frostweave(&self) -> bool {
+        self.equipment.armor.as_ref().map_or(false, |a| {
+            a.artifact_effect == ArtifactEffect::FrostweavRobe
+        })
+    }
+
+    pub fn get_damage_multiplier(&self) -> i32 {
+        if self.mindfire_ready {
+            2
+        } else {
+            1
+        }
+    }
+
+    pub fn consume_mindfire(&mut self) {
+        self.mindfire_ready = false;
     }
 
     /// Check if Power Attack or Shadow Strike buff is active (2x melee).

@@ -99,6 +99,35 @@ impl Map {
             tiles[x][y] = Tile::Stairs;
         }
 
+        let arena_w = rng.random_range(18..24);
+        let arena_h = rng.random_range(12..16);
+        let arena_x = rng.random_range(2..width.saturating_sub(arena_w + 2));
+        let arena_y = rng.random_range(2..height.saturating_sub(arena_h + 2));
+        let boss_room = Rect::new(arena_x, arena_y, arena_w, arena_h);
+
+        Map::apply_room_to_map(&mut tiles, &boss_room);
+
+        if let Some(prev_room) = rooms.last() {
+            let (new_x, new_y) = boss_room.center();
+            let (prev_x, prev_y) = prev_room.center();
+            if rng.random_bool(0.5) {
+                Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, prev_y);
+                Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, new_x);
+            } else {
+                Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, prev_x);
+                Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, new_y);
+            }
+        }
+
+        let (bx, by) = boss_room.center();
+        tiles[bx][by] = Tile::Stairs;
+
+        if !rooms.is_empty() {
+            *rooms.last_mut().unwrap() = boss_room.clone();
+        } else {
+            rooms.push(boss_room);
+        }
+
         Map {
             width,
             height,
@@ -319,7 +348,7 @@ impl Map {
         let boss_type = match floor {
             5 => Some(crate::monster::MonsterType::GoblinKing),
             10 => Some(crate::monster::MonsterType::BoneDragon),
-            15 => Some(crate::monster::MonsterType::ShadowLord),
+            f if f >= 15 && f % 5 == 0 => Some(crate::monster::MonsterType::ShadowLord),
             _ => None,
         };
         if let Some(bt) = boss_type {
