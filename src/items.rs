@@ -1,6 +1,62 @@
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
+// --- Item Rarity ---
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Rarity {
+    Common,
+    Uncommon,
+    Rare,
+    Epic,
+    Legendary,
+}
+
+impl Rarity {
+    pub fn color(&self) -> crossterm::style::Color {
+        match self {
+            Rarity::Common => crossterm::style::Color::White,
+            Rarity::Uncommon => crossterm::style::Color::Green,
+            Rarity::Rare => crossterm::style::Color::Cyan,
+            Rarity::Epic => crossterm::style::Color::Magenta,
+            Rarity::Legendary => crossterm::style::Color::Yellow,
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            Rarity::Common => "COMMON",
+            Rarity::Uncommon => "UNCOMMON",
+            Rarity::Rare => "RARE",
+            Rarity::Epic => "EPIC",
+            Rarity::Legendary => "LEGENDARY",
+        }
+    }
+}
+
+pub fn roll_rarity(floor: i32) -> Rarity {
+    let mut rng = rand::rng();
+
+    let legendary_chance = (0.001 + floor as f32 * 0.0005).min(0.02);
+    let epic_chance = (0.01 + floor as f32 * 0.003).min(0.08);
+    let rare_chance = (0.05 + floor as f32 * 0.01).min(0.20);
+    let uncommon_chance = (0.20 + floor as f32 * 0.02).min(0.40);
+
+    let roll: f32 = rng.random_range(0.0..1.0);
+
+    if roll < legendary_chance {
+        Rarity::Legendary
+    } else if roll < epic_chance {
+        Rarity::Epic
+    } else if roll < rare_chance {
+        Rarity::Rare
+    } else if roll < uncommon_chance {
+        Rarity::Uncommon
+    } else {
+        Rarity::Common
+    }
+}
+
 // --- Artifact Effects ---
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -64,6 +120,7 @@ pub struct Item {
     pub heal_amount: i32,
     #[allow(dead_code)]
     pub floor_level: i32,
+    pub rarity: Rarity,
     pub is_artifact: bool,
     pub artifact_effect: ArtifactEffect,
 }
@@ -85,10 +142,15 @@ impl Item {
             }
             ItemType::Potion => format!("{} (heals {})", self.name, self.heal_amount),
         };
-        if self.is_artifact {
-            format!("* {} *", base)
+        let rarity_suffix = if self.rarity == Rarity::Common {
+            String::new()
         } else {
-            base
+            format!(" [{}]", self.rarity.label())
+        };
+        if self.is_artifact {
+            format!("* {} *{}", base, rarity_suffix)
+        } else {
+            format!("{}{}", base, rarity_suffix)
         }
     }
 
@@ -101,33 +163,51 @@ impl Item {
 
 /// Generate a random item appropriate for the given floor.
 pub fn random_item(floor: i32) -> Item {
+    let rarity = roll_rarity(floor);
     let mut rng = rand::rng();
     let roll = rng.random_range(0..100);
 
     if roll < 40 {
-        random_potion()
+        let mut item = random_potion();
+        item.rarity = rarity;
+        item
     } else if roll < 70 {
-        random_weapon(floor)
+        let mut item = random_weapon(floor);
+        item.rarity = rarity;
+        item
     } else if roll < 90 {
-        random_armor(floor)
+        let mut item = random_armor(floor);
+        item.rarity = rarity;
+        item
     } else {
-        random_ring(floor)
+        let mut item = random_ring(floor);
+        item.rarity = rarity;
+        item
     }
 }
 
 /// Generate a random item weighted for monster drops.
 pub fn random_drop(floor: i32) -> Item {
+    let rarity = roll_rarity(floor);
     let mut rng = rand::rng();
     let roll = rng.random_range(0..100);
 
     if roll < 50 {
-        random_potion()
+        let mut item = random_potion();
+        item.rarity = rarity;
+        item
     } else if roll < 75 {
-        random_weapon(floor)
+        let mut item = random_weapon(floor);
+        item.rarity = rarity;
+        item
     } else if roll < 90 {
-        random_armor(floor)
+        let mut item = random_armor(floor);
+        item.rarity = rarity;
+        item
     } else {
-        random_ring(floor)
+        let mut item = random_ring(floor);
+        item.rarity = rarity;
+        item
     }
 }
 
@@ -142,6 +222,7 @@ pub fn random_potion() -> Item {
         stat_bonus_value: 0,
         heal_amount: 7,
         floor_level: 1,
+        rarity: Rarity::Common,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -160,6 +241,7 @@ pub fn random_weapon(floor: i32) -> Item {
             stat_bonus_value: 0,
             heal_amount: 0,
             floor_level: floor,
+            rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
         },
@@ -173,6 +255,7 @@ pub fn random_weapon(floor: i32) -> Item {
             stat_bonus_value: 0,
             heal_amount: 0,
             floor_level: floor,
+            rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
         },
@@ -189,6 +272,7 @@ pub fn random_weapon(floor: i32) -> Item {
                     stat_bonus_value: 0,
                     heal_amount: 0,
                     floor_level: floor,
+                    rarity: Rarity::Common,
                     is_artifact: false,
                     artifact_effect: ArtifactEffect::None,
                 }
@@ -203,6 +287,7 @@ pub fn random_weapon(floor: i32) -> Item {
                     stat_bonus_value: 0,
                     heal_amount: 0,
                     floor_level: floor,
+                    rarity: Rarity::Common,
                     is_artifact: false,
                     artifact_effect: ArtifactEffect::None,
                 }
@@ -224,6 +309,7 @@ pub fn random_armor(floor: i32) -> Item {
             stat_bonus_value: 0,
             heal_amount: 0,
             floor_level: floor,
+            rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
         },
@@ -237,6 +323,7 @@ pub fn random_armor(floor: i32) -> Item {
             stat_bonus_value: 0,
             heal_amount: 0,
             floor_level: floor,
+            rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
         },
@@ -250,6 +337,7 @@ pub fn random_armor(floor: i32) -> Item {
             stat_bonus_value: 0,
             heal_amount: 0,
             floor_level: floor,
+            rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
         },
@@ -283,6 +371,7 @@ pub fn random_ring(floor: i32) -> Item {
         stat_bonus_value: bonus,
         heal_amount: 0,
         floor_level: floor,
+        rarity: Rarity::Common,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -311,6 +400,7 @@ pub fn artifact_ragefang() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Ragefang,
     }
@@ -327,6 +417,7 @@ pub fn artifact_stonehide() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::StonehidePlate,
     }
@@ -343,6 +434,7 @@ pub fn artifact_warlord_signet() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::WarlordSignet,
     }
@@ -359,6 +451,7 @@ pub fn artifact_shadowfang() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Shadowfang,
     }
@@ -375,6 +468,7 @@ pub fn artifact_wraithwalkers() -> Item {
         stat_bonus_value: 3,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Wraithwalkers,
     }
@@ -391,6 +485,7 @@ pub fn artifact_venomcoil() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Venomcoil,
     }
@@ -407,6 +502,7 @@ pub fn artifact_stormcaller() -> Item {
         stat_bonus_value: 3,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::StormcallerStaff,
     }
@@ -423,6 +519,7 @@ pub fn artifact_frostweavrobe() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::FrostweavRobe,
     }
@@ -439,6 +536,7 @@ pub fn artifact_mindfire() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 6,
+        rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::MindFireCrown,
     }
@@ -477,6 +575,7 @@ pub fn named_shadow_slicer() -> Item {
         stat_bonus_value: 1,
         heal_amount: 0,
         floor_level: 4,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -493,6 +592,7 @@ pub fn named_bone_crusher() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -509,6 +609,7 @@ pub fn named_spellbound_staff() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -525,6 +626,7 @@ pub fn named_veterans_plate() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -541,6 +643,7 @@ pub fn named_swiftboots() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 4,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -557,6 +660,7 @@ pub fn named_sages_robe() -> Item {
         stat_bonus_value: 3,
         heal_amount: 0,
         floor_level: 4,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -573,6 +677,7 @@ pub fn named_lions_amulet() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -589,6 +694,7 @@ pub fn named_eagles_eye() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -605,6 +711,7 @@ pub fn named_dragon_heart() -> Item {
         stat_bonus_value: 4,
         heal_amount: 0,
         floor_level: 5,
+        rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -651,6 +758,7 @@ pub fn warrior_starting_weapon() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 1,
+        rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -667,6 +775,7 @@ pub fn warrior_starting_armor() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 1,
+        rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -683,6 +792,7 @@ pub fn rogue_starting_weapon() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 1,
+        rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -699,6 +809,7 @@ pub fn mage_starting_weapon() -> Item {
         stat_bonus_value: 0,
         heal_amount: 0,
         floor_level: 1,
+        rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }
@@ -715,6 +826,7 @@ pub fn mage_starting_ring() -> Item {
         stat_bonus_value: 2,
         heal_amount: 0,
         floor_level: 1,
+        rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
     }

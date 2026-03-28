@@ -2028,9 +2028,15 @@ fn main() -> std::io::Result<()> {
                                             if monsters[i].is_boss {
                                                 log.push("*** BOSS DEFEATED! ***".to_string());
                                                 log.push("The stairs are unsealed!".to_string());
-                                                // Guaranteed high-tier drop
-                                                let boss_drop =
+                                                // Guaranteed high-tier drop with minimum rarity
+                                                let mut boss_drop =
                                                     items::random_drop(current_floor + 3);
+                                                // Boss drops: floor 5+ = Rare minimum, floor 10+ = Epic minimum
+                                                if current_floor >= 10 {
+                                                    boss_drop.rarity = items::Rarity::Epic;
+                                                } else {
+                                                    boss_drop.rarity = items::Rarity::Rare;
+                                                }
                                                 log.push(format!(
                                                     "The {} drops a powerful {}!",
                                                     monsters[i].name,
