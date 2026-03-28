@@ -10,6 +10,175 @@ use std::io::{stdout, Write};
 use crate::items::ItemType;
 use crate::player::{Class, Player, INVENTORY_CAPACITY};
 
+// --- Title Screen ---
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TitleChoice {
+    NewGame,
+    LoadGame,
+    Quit,
+}
+
+pub fn title_screen() -> std::io::Result<TitleChoice> {
+    let mut stdout = stdout();
+    let mut selected: usize = 0;
+
+    loop {
+        let (term_w, term_h) = terminal::size()?;
+        let tw = term_w as usize;
+        let th = term_h as usize;
+
+        execute!(stdout, Clear(ClearType::All))?;
+
+        let box_w = 50;
+        let box_h = 18;
+        let box_x = if tw > box_w { (tw - box_w) / 2 } else { 0 } as u16;
+        let box_y = if th > box_h {
+            ((th - box_h) / 2) as u16
+        } else {
+            0
+        };
+
+        let draw = |stdout: &mut std::io::Stdout,
+                    row: i32,
+                    text: &str,
+                    color: Color|
+         -> std::io::Result<()> {
+            execute!(
+                stdout,
+                cursor::MoveTo(box_x, box_y + row as u16),
+                SetForegroundColor(color),
+                Print(text)
+            )
+        };
+
+        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
+
+        let mut row = 0i32;
+
+        draw(&mut stdout, row, &top_border, Color::DarkGrey)?;
+        row += 1;
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+
+        // ASCII Logo
+        let logo = [
+            "  █████╗ ██╗      ██████╗  ██████╗ ██████╗  ",
+            " ██╔══██╗██║     ██╔═══██╗██╔═══██╗██╔══██╗ ",
+            " ███████║██║     ██║   ██║██║   ██║██████╔╝ ",
+            " ██╔══██║██║     ██║   ██║██║   ██║██╔══██╗ ",
+            " ██║  ██║███████╗╚██████╔╝╚██████╔╝██║  ██║ ",
+            " ╚═╝  ╚═╝╚══════╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ",
+        ];
+
+        for logo_line in &logo {
+            let pad = (box_w - 2 - logo_line.len()) / 2;
+            draw(
+                &mut stdout,
+                row,
+                &format!(
+                    "║{}{}{}║",
+                    " ".repeat(pad),
+                    logo_line,
+                    " ".repeat(box_w - 2 - pad - logo_line.len())
+                ),
+                Color::Yellow,
+            )?;
+            row += 1;
+        }
+
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+        draw(&mut stdout, row, &mid_border, Color::DarkGrey)?;
+        row += 1;
+
+        // Menu options
+        let options = ["[N]ew Game", "[L]oad Game", "[Q]uit"];
+        let descriptions = [
+            "Start a new adventure",
+            "Continue a saved game",
+            "Exit to desktop",
+        ];
+
+        for (i, (opt, desc)) in options.iter().zip(descriptions.iter()).enumerate() {
+            let is_selected = i == selected;
+            let marker = if is_selected { "►" } else { " " };
+            let fg = if is_selected {
+                Color::White
+            } else {
+                Color::DarkGrey
+            };
+
+            draw(&mut stdout, row, &format!("║  {} {} ", marker, opt), fg)?;
+            // Add description on the same line
+            execute!(
+                stdout,
+                cursor::MoveTo(box_x + 30, box_y + row as u16),
+                SetForegroundColor(if is_selected {
+                    Color::Grey
+                } else {
+                    Color::DarkGrey
+                }),
+                Print(desc)
+            )?;
+            execute!(
+                stdout,
+                cursor::MoveTo(box_x + box_w as u16 - 1, box_y + row as u16),
+                Print("║")
+            )?;
+            row += 1;
+        }
+
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+        draw(&mut stdout, row, &bottom_border, Color::DarkGrey)?;
+
+        // Version info
+        execute!(
+            stdout,
+            cursor::MoveTo(box_x, box_y + row as u16 + 1),
+            SetForegroundColor(Color::DarkGrey),
+            Print(format!(
+                "{:^width$}",
+                "v0.3.2  │  A Terminal Roguelike",
+                width = box_w
+            ))
+        )?;
+
+        stdout.flush()?;
+
+        // Input
+        if let Event::Key(key_event) = event::read()? {
+            match key_event.code {
+                KeyCode::Up => {
+                    if selected > 0 {
+                        selected -= 1;
+                    }
+                }
+                KeyCode::Down => {
+                    if selected < 2 {
+                        selected += 1;
+                    }
+                }
+                KeyCode::Enter => {
+                    return Ok(match selected {
+                        0 => TitleChoice::NewGame,
+                        1 => TitleChoice::LoadGame,
+                        _ => TitleChoice::Quit,
+                    });
+                }
+                KeyCode::Char('n') => return Ok(TitleChoice::NewGame),
+                KeyCode::Char('l') => return Ok(TitleChoice::LoadGame),
+                KeyCode::Char('q') | KeyCode::Esc => return Ok(TitleChoice::Quit),
+                _ => {}
+            }
+        }
+    }
+}
+
 // --- Character Creation Screen ---
 
 pub fn character_creation_screen() -> std::io::Result<Class> {
@@ -42,16 +211,17 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
             )
         };
 
-        // Border
-        let top_border = format!("+{}+", "=".repeat(box_w - 2));
-        let mid_border = format!("+{}+", "-".repeat(box_w - 2));
-        let empty_line = format!("|{}|", " ".repeat(box_w - 2));
+        // Unicode box-drawing borders
+        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
 
         draw(&mut stdout, 0, &top_border, Color::DarkGrey)?;
         draw(
             &mut stdout,
             1,
-            &format!("|{:^width$}|", "CHOOSE YOUR CLASS", width = box_w - 2),
+            &format!("║{:^width$}║", " CHOOSE YOUR CLASS ", width = box_w - 2),
             Color::White,
         )?;
         draw(&mut stdout, 2, &mid_border, Color::DarkGrey)?;
@@ -79,7 +249,7 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
             row += 1;
 
             // Class name with marker
-            let name_line = format!("|  {}[{}] {:<30}|", marker, i + 1, class.name());
+            let name_line = format!("║  {}[{}] {:<30}║", marker, i + 1, class.name());
             draw(&mut stdout, row, &name_line, highlight)?;
             // Re-draw class name in class color
             execute!(
@@ -160,22 +330,22 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
 
                 let stats_lines = [
                     format!(
-                        "|      STR {} {:2}                    |",
+                        "║      STR {} {:2}                    ║",
                         stat_bar(stats.str_),
                         stats.str_
                     ),
                     format!(
-                        "|      DEX {} {:2}                    |",
+                        "║      DEX {} {:2}                    ║",
                         stat_bar(stats.dex),
                         stats.dex
                     ),
                     format!(
-                        "|      INT {} {:2}                    |",
+                        "║      INT {} {:2}                    ║",
                         stat_bar(stats.int),
                         stats.int
                     ),
                     format!(
-                        "|      CON {} {:2}                    |",
+                        "║      CON {} {:2}                    ║",
                         stat_bar(stats.con),
                         stats.con
                     ),
@@ -188,7 +358,7 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
 
                 // HP
                 let hp = stats.max_hp();
-                let hp_line = format!("|      HP: {:<31}|", hp);
+                let hp_line = format!("║      HP: {:<31}║", hp);
                 draw(&mut stdout, row, &hp_line, Color::Grey)?;
                 row += 1;
 
@@ -202,7 +372,7 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
                 draw(
                     &mut stdout,
                     row,
-                    &format!("|      Starts with:{:<24}|", ""),
+                    &format!("║      Starts with:{:<24}║", ""),
                     Color::DarkGrey,
                 )?;
                 execute!(
@@ -214,7 +384,7 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
                 row += 1;
 
                 for g in &gear {
-                    let gear_line = format!("|        {:<33}|", g);
+                    let gear_line = format!("║        {:<33}║", g);
                     draw(&mut stdout, row, &gear_line, Color::DarkYellow)?;
                     row += 1;
                 }
@@ -227,7 +397,7 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
                 };
                 draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
                 row += 1;
-                let play_line = format!("|    {:<width$}|", playstyle, width = box_w - 6);
+                let play_line = format!("║    {:<width$}║", playstyle, width = box_w - 6);
                 draw(&mut stdout, row, &play_line, Color::DarkGrey)?;
                 execute!(
                     stdout,
@@ -245,13 +415,13 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
         draw(&mut stdout, row, &mid_border, Color::DarkGrey)?;
         row += 1;
         let footer = format!(
-            "|{:^width$}|",
-            "Up/Down Navigate  |  Enter Select",
+            "║{:^width$}║",
+            "Up/Down Navigate  │  Enter Select",
             width = box_w - 2
         );
         draw(&mut stdout, row, &footer, Color::Grey)?;
         row += 1;
-        draw(&mut stdout, row, &top_border, Color::DarkGrey)?;
+        draw(&mut stdout, row, &bottom_border, Color::DarkGrey)?;
 
         stdout.flush()?;
 
@@ -316,9 +486,10 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
             )
         };
 
-        let top_border = format!("+{}+", "=".repeat(box_w - 2));
-        let mid_border = format!("+{}+", "-".repeat(box_w - 2));
-        let empty_line = format!("|{}|", " ".repeat(box_w - 2));
+        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
 
         let mut row = 0u16;
 
@@ -327,7 +498,7 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
         draw(
             &mut stdout,
             row,
-            &format!("|{:^width$}|", "INVENTORY", width = box_w - 2),
+            &format!("║{:^width$}║", " INVENTORY ", width = box_w - 2),
             Color::White,
         )?;
         row += 1;
@@ -338,7 +509,7 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
         draw(
             &mut stdout,
             row,
-            &format!("|  {:<width$}|", "Equipment:", width = box_w - 4),
+            &format!("║  {:<width$}║", "Equipment:", width = box_w - 4),
             Color::DarkYellow,
         )?;
         row += 1;
@@ -359,9 +530,9 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
             .as_ref()
             .map_or("(empty)".to_string(), |r| r.display_name());
 
-        let w_line = format!("|    Weapon: {:<width$}|", weapon_name, width = box_w - 14);
-        let a_line = format!("|    Armor:  {:<width$}|", armor_name, width = box_w - 14);
-        let r_line = format!("|    Ring:   {:<width$}|", ring_name, width = box_w - 14);
+        let w_line = format!("║    Weapon: {:<width$}║", weapon_name, width = box_w - 14);
+        let a_line = format!("║    Armor:  {:<width$}║", armor_name, width = box_w - 14);
+        let r_line = format!("║    Ring:   {:<width$}║", ring_name, width = box_w - 14);
 
         draw(&mut stdout, row, &w_line, Color::Cyan)?;
         row += 1;
@@ -384,7 +555,7 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
         draw(
             &mut stdout,
             row,
-            &format!("|  {:<width$}|", count_str, width = box_w - 4),
+            &format!("║  {:<width$}║", count_str, width = box_w - 4),
             Color::DarkYellow,
         )?;
         row += 1;
@@ -393,25 +564,20 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
             draw(
                 &mut stdout,
                 row,
-                &format!("|    {:<width$}|", "(empty)", width = box_w - 6),
+                &format!("║    {:<width$}║", "(empty)", width = box_w - 6),
                 Color::DarkGrey,
             )?;
             row += 1;
         } else {
             for (i, item) in player.inventory.iter().enumerate() {
                 let letter = (b'a' + i as u8) as char;
-                let item_color = match item.item_type {
-                    ItemType::Weapon => Color::Cyan,
-                    ItemType::Armor => Color::DarkYellow,
-                    ItemType::Ring => Color::Yellow,
-                    ItemType::Potion => Color::Magenta,
-                };
+                let item_color = item.rarity.color();
                 let action_hint = match item.item_type {
                     ItemType::Potion => "[use]",
                     _ => "[equip]",
                 };
                 let line = format!(
-                    "|    {}) {:<24} {:>8}|",
+                    "║    {}) {:<24} {:>8}║",
                     letter,
                     item.display_name(),
                     action_hint
@@ -427,13 +593,13 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
         row += 1;
 
         let footer = format!(
-            "|{:^width$}|",
-            "[a-j] Use/Equip  [A-J] Drop  Esc Close",
+            "║{:^width$}║",
+            "[a-j] Use/Equip  │  [A-J] Drop  │  Esc Close",
             width = box_w - 2
         );
         draw(&mut stdout, row, &footer, Color::Grey)?;
         row += 1;
-        draw(&mut stdout, row, &top_border, Color::DarkGrey)?;
+        draw(&mut stdout, row, &bottom_border, Color::DarkGrey)?;
 
         stdout.flush()?;
 

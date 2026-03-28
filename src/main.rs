@@ -243,7 +243,7 @@ fn render_minimap(
         stdout,
         cursor::MoveTo(start_col - 1, start_row - 1),
         SetForegroundColor(Color::DarkGrey),
-        Print(format!("+{}+", "-".repeat(mini_w)))
+        Print(format!("┌{}┐", "─".repeat(mini_w)))
     )?;
 
     for my in 0..mini_h {
@@ -251,20 +251,20 @@ fn render_minimap(
             stdout,
             cursor::MoveTo(start_col - 1, start_row + my as u16),
             SetForegroundColor(Color::DarkGrey),
-            Print("|")
+            Print("│")
         )?;
         execute!(
             stdout,
             cursor::MoveTo(start_col + mini_w as u16, start_row + my as u16),
             SetForegroundColor(Color::DarkGrey),
-            Print("|")
+            Print("│")
         )?;
     }
     execute!(
         stdout,
         cursor::MoveTo(start_col - 1, start_row + mini_h as u16),
         SetForegroundColor(Color::DarkGrey),
-        Print(format!("+{}+", "-".repeat(mini_w)))
+        Print(format!("└{}┘", "─".repeat(mini_w)))
     )?;
 
     let mut stairs_mini: Option<(usize, usize)> = None;
@@ -713,7 +713,7 @@ fn process_projectiles(
                 player.last_damage_source = Some(("Arrow".to_string(), dmg));
                 player.take_damage(dmg);
                 player.damage_taken += dmg;
-                log.push(format!("An arrow hits you for {} damage!", dmg));
+                log.push(format!("➤ An arrow hits you for {} damage!", dmg));
             }
             projectiles.remove(i);
             continue;
@@ -821,7 +821,7 @@ fn process_monsters(
                     player.last_damage_source = Some((name.to_string(), dmg));
                     player.take_damage(damage);
                     player.damage_taken += dmg;
-                    log.push(format!("The {} hits you for {} damage!", name, dmg));
+                    log.push(format!("➤ The {} hits you for {} damage!", name, dmg));
 
                     // Stonehide Plate: trigger below 30% HP
                     if !player.stonehide_triggered && player.has_stonehide() {
@@ -1083,7 +1083,7 @@ fn process_monsters(
                             player.last_damage_source = Some(("Bone Dragon".to_string(), dmg));
                             player.take_damage(dmg);
                             player.damage_taken += dmg;
-                            log.push(format!("Dragon fire engulfs you for {} damage!", dmg));
+                            log.push(format!("🔥 Dragon fire engulfs you for {} damage!", dmg));
                         }
                     }
                 }
@@ -1106,7 +1106,7 @@ fn process_monsters(
                         player.last_damage_source = Some(("Shadow Lord".to_string(), dmg));
                         player.take_damage(dmg);
                         player.damage_taken += dmg;
-                        log.push(format!("Shadow energy tears at you for {} damage!", dmg));
+                        log.push(format!("👻 Shadow energy tears at you for {} damage!", dmg));
                     }
                 }
             }
@@ -1276,6 +1276,30 @@ fn main() -> std::io::Result<()> {
     let mut log: Vec<String> = Vec::new();
 
     'outer: loop {
+        // --- TITLE SCREEN ---
+        match ui::title_screen()? {
+            ui::TitleChoice::Quit => {
+                execute!(stdout, cursor::Show)?;
+                terminal::disable_raw_mode()?;
+                return Ok(());
+            }
+            ui::TitleChoice::LoadGame => {
+                // TODO: Implement save/load
+                let (tw, th) = terminal::size()?;
+                let _ = execute!(stdout, Clear(ClearType::All));
+                execute!(
+                    stdout,
+                    cursor::MoveTo(tw / 2 - 15, th / 2),
+                    SetForegroundColor(Color::Yellow),
+                    Print("No saved games found!")
+                )?;
+                stdout.flush()?;
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                continue;
+            }
+            ui::TitleChoice::NewGame => {}
+        }
+
         // --- CHARACTER CREATION ---
         let chosen_class = ui::character_creation_screen()?;
         let p_color = player_color(chosen_class);
@@ -1864,7 +1888,7 @@ fn main() -> std::io::Result<()> {
                                                                 monsters[mi].y,
                                                             ));
                                                             log.push(format!(
-                                                                "The {} dies!",
+                                                                "✝ The {} dies!",
                                                                 monsters[mi].name
                                                             ));
                                                             // XP reward
@@ -1938,13 +1962,13 @@ fn main() -> std::io::Result<()> {
                                         if player.has_damage_buff() {
                                             damage *= 2;
                                             player.consume_damage_buff();
-                                            log.push("Critical strike!".to_string());
+                                            log.push("★ CRITICAL STRIKE! ★".to_string());
                                         }
 
                                         monsters[i].take_damage(damage);
                                         player.damage_dealt += damage;
                                         log.push(format!(
-                                            "You hit the {} for {} damage!",
+                                            "⚔ You hit the {} for {} damage!",
                                             monsters[i].name, damage
                                         ));
 
@@ -1960,7 +1984,7 @@ fn main() -> std::io::Result<()> {
 
                                         if !monsters[i].is_alive() {
                                             player.monsters_slain += 1;
-                                            log.push(format!("The {} dies!", monsters[i].name));
+                                            log.push(format!("✝ The {} dies!", monsters[i].name));
                                             monsters[i].death_pos =
                                                 Some((monsters[i].x, monsters[i].y));
                                             let dpos = (monsters[i].x, monsters[i].y);
@@ -2115,7 +2139,15 @@ fn main() -> std::io::Result<()> {
                                                 // XP for descending
                                                 let floor_xp = current_floor * 5;
                                                 let level_msgs = player.gain_xp(floor_xp);
-                                                log.push(format!("You descend! +{} XP", floor_xp));
+                                                // Enhanced floor transition message
+                                                let transition_msg = match current_floor {
+                                                    5 => "▼ You descend to the Dungeons... A dark presence lurks below...",
+                                                    10 => "▼ You descend to the Bone Pits... The air grows cold...",
+                                                    15 => "▼ You descend to the Shadow Realm... The final battle awaits!",
+                                                    _ => "▼ You descend deeper into the darkness...",
+                                                };
+                                                log.push(transition_msg.to_string());
+                                                log.push(format!("+{} XP", floor_xp));
                                                 for msg in level_msgs {
                                                     log.push(msg);
                                                 }
