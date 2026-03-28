@@ -1,5 +1,34 @@
 # Ironveil Development Changelog
 
+## v0.4.1 — UI/UX Visual Overhaul
+*2026-03-28*
+
+### Phase 1: Unicode Box-Drawing
+- Replaced ASCII borders (`+---+`) with Unicode box-drawing characters (`╔═══╗`) in character creation and inventory screens
+- Updated minimap borders to use `┌───┐` style
+- Applied rarity-based colors to inventory items:
+  - Common: White, Uncommon: Green, Rare: Cyan, Epic: Magenta, Legendary: Yellow
+
+### Phase 2: Title Screen & Enhanced UI
+- Added new title screen with ASCII Ironveil logo
+- Menu options: New Game, Load Game, Quit
+- Unicode borders on all UI screens
+
+### Phase 3: Combat & Flavor Updates
+- Combat messages now use Unicode symbols:
+  - `⚔` for player attacks
+  - `★ CRITICAL STRIKE! ★` for critical hits
+  - `➤` for monster attacks
+  - `🔥` for dragon fire attacks
+  - `👻` for shadow energy attacks
+  - `✝` for monster kills
+- Enhanced floor transition messages with themed text:
+  - Floor 5: "You descend to the Dungeons... A dark presence lurks below..."
+  - Floor 10: "You descend to the Bone Pits... The air grows cold..."
+  - Floor 15: "You descend to the Shadow Realm... The final battle awaits!"
+
+---
+
 ## v0.4.0 — Artifacts, Minimap & Boss Updates
 *2026-03-27*
 

@@ -66,9 +66,9 @@ Based on research of modern roguelike best practices (2024-2025), here are the r
 ## Recommended Priority Order
 
 ### Phase 6 (Next)
-- [ ] Save/Load System - essential for playable game
-- [ ] Fog of War - exploration core mechanic
-- [ ] Fix broken inventory - Tab key not working
+- [x] Save/Load System - essential for playable game
+- [x] Fog of War - exploration core mechanic
+- [x] Fix broken inventory - Tab key not working
 
 ### Phase 6.5 (Enhancements)
 - [ ] Better dungeon generation (BSP algorithm)
