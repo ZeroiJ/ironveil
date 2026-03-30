@@ -565,7 +565,7 @@ fn show_death_screen(
         Print("  * YOU HAVE DIED *")
     )?;
 
-    let separator = "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~";
+    let stats_box_w: usize = 35;
     let stats = vec![
         ("Class", player.class.name().to_string(), Color::Grey),
         ("Floor reached", current_floor.to_string(), Color::Grey),
@@ -583,39 +583,47 @@ fn show_death_screen(
         ),
     ];
 
+    let box_x = cx - (stats_box_w / 2) as u16;
+    let box_y = cy - 2;
+    let box_h = stats.len() as u16 + 2;
+
+    // Top border
     execute!(
         stdout,
-        cursor::MoveTo(cx - 16, cy - 2),
+        cursor::MoveTo(box_x - 1, box_y),
         SetForegroundColor(Color::DarkGrey),
-        Print(separator)
+        Print(format!("╔{}╗", "═".repeat(stats_box_w)))
     )?;
     stdout.flush()?;
-    std::thread::sleep(Duration::from_millis(120));
+    std::thread::sleep(Duration::from_millis(80));
 
+    // Stats lines with side borders
     for (i, (label, value, color)) in stats.iter().enumerate() {
-        let row = cy + i as u16;
+        let row = box_y + 1 + i as u16;
         execute!(
             stdout,
-            cursor::MoveTo(cx - 16, row),
+            cursor::MoveTo(box_x - 1, row),
             SetForegroundColor(Color::DarkGrey),
-            Print(label)
+            Print(format!("║ {:20} │ ", label))
         )?;
         execute!(
             stdout,
-            cursor::MoveTo(cx + 4, row),
+            cursor::MoveTo(box_x + 24, row),
             SetForegroundColor(*color),
             Print(value)
         )?;
         stdout.flush()?;
-        std::thread::sleep(Duration::from_millis(120));
+        std::thread::sleep(Duration::from_millis(80));
     }
 
+    // Bottom border
     execute!(
         stdout,
-        cursor::MoveTo(cx - 16, cy + stats.len() as u16 + 1),
+        cursor::MoveTo(box_x - 1, box_y + box_h),
         SetForegroundColor(Color::DarkGrey),
-        Print(separator)
+        Print(format!("╚{}╝", "═".repeat(stats_box_w)))
     )?;
+
     stdout.flush()?;
     std::thread::sleep(Duration::from_millis(200));
 
@@ -1164,6 +1172,7 @@ fn render_ui(
     log: &[String],
     player_x: usize,
     player_y: usize,
+    monsters: &[Monster],
 ) -> std::io::Result<()> {
     let stats = player.effective_stats();
     let weapon_name = player
@@ -1172,17 +1181,23 @@ fn render_ui(
         .as_ref()
         .map_or("Fists".to_string(), |w| w.display_name());
 
-    // Status line 1: Floor, HP, Level, Class, Weapon, Coordinates
+    // Status line 1: Floor, HP, Level, Class, Weapon
+    let hp_bar_len = 12;
+    let hp_pct = (player.hp as f32 / player.max_hp as f32).min(1.0);
+    let hp_filled = (hp_pct * hp_bar_len as f32) as usize;
+    let hp_empty = hp_bar_len - hp_filled;
+    let hp_bar: String = format!("[{}{}]", "█".repeat(hp_filled), "░".repeat(hp_empty));
+    let hp_color = if hp_pct > 0.5 {
+        Color::Green
+    } else if hp_pct > 0.25 {
+        Color::Yellow
+    } else {
+        Color::Red
+    };
+
     let status = format!(
-        "Floor: {} | HP: {:2}/{:2} | Lv:{} | {} | {} | Pos:({},{})",
-        current_floor,
-        player.hp,
-        player.max_hp,
-        player.level,
-        player.class.name(),
-        weapon_name,
-        player_x,
-        player_y
+        "Floor: {} │ HP {} │ Lv:{} {} │ Pos:({},{})",
+        current_floor, hp_bar, player.level, weapon_name, player_x, player_y
     );
     execute!(
         stdout,
@@ -1192,21 +1207,30 @@ fn render_ui(
         Print(&status)
     )?;
 
+    // Draw HP bar color overlay
+    let bar_start = "Floor: ".len() + "│ HP ".len() + 1;
+    execute!(
+        stdout,
+        cursor::MoveTo(bar_start as u16, map_height as u16 + 1),
+        SetForegroundColor(hp_color),
+        Print(&hp_bar)
+    )?;
+
     // Status line 2: XP bar + Stats
     let xp_pct = if player.xp_to_next_level > 0 {
-        (player.xp * 100 / player.xp_to_next_level).min(100)
+        (player.xp as f32 / player.xp_to_next_level as f32 * 100.0).min(100.0) as i32
     } else {
         100
     };
-    let xp_bar_len = 10;
-    let filled = (xp_pct * xp_bar_len / 100) as usize;
+    let xp_bar_len: usize = 10;
+    let filled = (xp_pct * xp_bar_len as i32 / 100) as usize;
     let xp_bar: String = format!(
         "[{}{}]",
-        "#".repeat(filled),
-        "-".repeat((xp_bar_len as usize).saturating_sub(filled))
+        "█".repeat(filled),
+        "░".repeat(xp_bar_len.saturating_sub(filled))
     );
     let stat_line = format!(
-        "XP:{}/{} {} | STR:{} DEX:{} INT:{} CON:{} | Def:{} | Tab:Inv",
+        "XP {}/{} │ {} │ STR:{} DEX:{} INT:{} CON:{} │ Def:{}",
         player.xp,
         player.xp_to_next_level,
         xp_bar,
@@ -1219,7 +1243,7 @@ fn render_ui(
     execute!(
         stdout,
         cursor::MoveTo(0, map_height as u16 + 2),
-        SetForegroundColor(Color::DarkGrey),
+        SetForegroundColor(Color::Cyan),
         Clear(ClearType::UntilNewLine),
         Print(&stat_line)
     )?;
@@ -1264,6 +1288,29 @@ fn render_ui(
             Clear(ClearType::UntilNewLine),
             Print(msg)
         )?;
+    }
+
+    // Boss health bar (if boss is nearby)
+    for m in monsters.iter() {
+        if m.is_boss && m.is_alive() {
+            let dist = ((m.x as i32 - player_x as i32).abs() + (m.y as i32 - player_y as i32).abs())
+                as usize;
+            if dist <= 8 {
+                let hp_pct = m.hp as f32 / m.max_hp as f32;
+                let bar_len = 20;
+                let filled = (hp_pct * bar_len as f32) as usize;
+                let hp_bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(bar_len - filled));
+
+                execute!(
+                    stdout,
+                    cursor::MoveTo(0, map_height as u16 + 4),
+                    SetForegroundColor(Color::DarkRed),
+                    Clear(ClearType::UntilNewLine),
+                    Print(format!("⚠ BOSS: {} │ {}", m.name, hp_bar))
+                )?;
+                break;
+            }
+        }
     }
     Ok(())
 }
@@ -1432,6 +1479,7 @@ fn main() -> std::io::Result<()> {
                     &log,
                     player.x,
                     player.y,
+                    &monsters,
                 )?;
                 render_webs(&mut stdout, &map, &webs)?;
                 render_ground_items(&mut stdout, &map, &ground_items)?;

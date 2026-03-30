@@ -30,14 +30,12 @@ pub fn title_screen() -> std::io::Result<TitleChoice> {
 
         execute!(stdout, Clear(ClearType::All))?;
 
-        let box_w = 50;
-        let box_h = 18;
-        let box_x = if tw > box_w { (tw - box_w) / 2 } else { 0 } as u16;
-        let box_y = if th > box_h {
-            ((th - box_h) / 2) as u16
-        } else {
-            0
-        };
+        let box_w = 60usize;
+        let box_h = 20usize;
+        let safe_box_w = box_w.min(tw.saturating_sub(4));
+        let safe_box_h = box_h.min(th.saturating_sub(4));
+        let box_x = (tw.saturating_sub(safe_box_w) / 2) as u16;
+        let box_y = (th.saturating_sub(safe_box_h) / 2) as u16;
 
         let draw = |stdout: &mut std::io::Stdout,
                     row: i32,
@@ -52,10 +50,10 @@ pub fn title_screen() -> std::io::Result<TitleChoice> {
             )
         };
 
-        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
-        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
-        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
-        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
+        let top_border = format!("╔{}╗", "═".repeat(safe_box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(safe_box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(safe_box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(safe_box_w - 2));
 
         let mut row = 0i32;
 
@@ -75,7 +73,7 @@ pub fn title_screen() -> std::io::Result<TitleChoice> {
         ];
 
         for logo_line in &logo {
-            let pad = (box_w - 2 - logo_line.len()) / 2;
+            let pad = (safe_box_w.saturating_sub(2).saturating_sub(logo_line.len())) / 2;
             draw(
                 &mut stdout,
                 row,
@@ -83,7 +81,12 @@ pub fn title_screen() -> std::io::Result<TitleChoice> {
                     "║{}{}{}║",
                     " ".repeat(pad),
                     logo_line,
-                    " ".repeat(box_w - 2 - pad - logo_line.len())
+                    " ".repeat(
+                        safe_box_w
+                            .saturating_sub(2)
+                            .saturating_sub(pad)
+                            .saturating_sub(logo_line.len())
+                    )
                 ),
                 Color::Yellow,
             )?;
@@ -126,7 +129,7 @@ pub fn title_screen() -> std::io::Result<TitleChoice> {
             )?;
             execute!(
                 stdout,
-                cursor::MoveTo(box_x + box_w as u16 - 1, box_y + row as u16),
+                cursor::MoveTo(box_x + safe_box_w as u16 - 1, box_y + row as u16),
                 Print("║")
             )?;
             row += 1;
@@ -194,9 +197,10 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
         execute!(stdout, Clear(ClearType::All))?;
 
         // Box dimensions
-        let box_w = 44;
-        let box_x = if tw > box_w { (tw - box_w) / 2 } else { 0 } as u16;
-        let box_y = if th > 30 { ((th - 30) / 2) as u16 } else { 0 };
+        let box_w = 50usize;
+        let safe_box_w = box_w.min(tw.saturating_sub(4));
+        let box_x = (tw.saturating_sub(safe_box_w) / 2) as u16;
+        let box_y = (th.saturating_sub(30) / 2) as u16;
 
         let draw = |stdout: &mut std::io::Stdout,
                     row: u16,
@@ -212,10 +216,10 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
         };
 
         // Unicode box-drawing borders
-        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
-        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
-        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
-        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
+        let top_border = format!("╔{}╗", "═".repeat(safe_box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(safe_box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(safe_box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(safe_box_w - 2));
 
         draw(&mut stdout, 0, &top_border, Color::DarkGrey)?;
         draw(
@@ -238,7 +242,13 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
                 Class::Mage => Color::Blue,
             };
 
-            let marker = if is_selected { "> " } else { "  " };
+            let class_icon = match class {
+                Class::Warrior => "⚔",
+                Class::Rogue => "🗡",
+                Class::Mage => "✦",
+            };
+
+            let marker = if is_selected { "►" } else { " " };
             let highlight = if is_selected {
                 Color::White
             } else {
@@ -248,15 +258,15 @@ pub fn character_creation_screen() -> std::io::Result<Class> {
             draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
             row += 1;
 
-            // Class name with marker
-            let name_line = format!("║  {}[{}] {:<30}║", marker, i + 1, class.name());
+            // Class name with icon and marker
+            let name_line = format!("║  {}{} [{}] {} ", marker, class_icon, i + 1, class.name());
             draw(&mut stdout, row, &name_line, highlight)?;
             // Re-draw class name in class color
             execute!(
                 stdout,
-                cursor::MoveTo(box_x + 7, box_y + row),
+                cursor::MoveTo(box_x + 10, box_y + row),
                 SetForegroundColor(class_color),
-                Print(format!("{:<30}", class.name()))
+                Print(format!(" {}", class.name()))
             )?;
             row += 1;
 
@@ -469,9 +479,10 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
 
         execute!(stdout, Clear(ClearType::All))?;
 
-        let box_w = 44;
-        let box_x = if tw > box_w { (tw - box_w) / 2 } else { 0 } as u16;
-        let box_y = if th > 28 { ((th - 28) / 2) as u16 } else { 0 };
+        let box_w = 50usize;
+        let safe_box_w = box_w.min(tw.saturating_sub(4));
+        let box_x = (tw.saturating_sub(safe_box_w) / 2) as u16;
+        let box_y = (th.saturating_sub(28) / 2) as u16;
 
         let draw = |stdout: &mut std::io::Stdout,
                     row: u16,
@@ -486,10 +497,10 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
             )
         };
 
-        let top_border = format!("╔{}╗", "═".repeat(box_w - 2));
-        let mid_border = format!("╠{}╣", "─".repeat(box_w - 2));
-        let empty_line = format!("║{}║", " ".repeat(box_w - 2));
-        let bottom_border = format!("╚{}╝", "═".repeat(box_w - 2));
+        let top_border = format!("╔{}╗", "═".repeat(safe_box_w - 2));
+        let mid_border = format!("╠{}╣", "─".repeat(safe_box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(safe_box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(safe_box_w - 2));
 
         let mut row = 0u16;
 
