@@ -1,5 +1,50 @@
 # Ironveil Development Changelog
 
+## v0.4.2 — Special Rooms & Procedural Generation
+*2026-04-02*
+
+### Room Types System
+- Added `RoomType` enum: Normal, Treasure, Trap, Shrine, Secret, Boss, Spawn
+- 33% chance per floor for one special room (Treasure/Trap/Shrine/Secret)
+- Room assignment logic based on floor depth:
+  - Floors 1-3: Treasure (50%), Trap (30%), Shrine (20%)
+  - Floors 4-9: Treasure (30%), Trap (35%), Shrine (20%), Secret (15%)
+  - Floors 10+: Treasure (20%), Trap (30%), Shrine (20%), Secret (30%)
+
+### Special Room Visuals
+- **Treasure Room**: Walls=`$`, floor=`"`, colors=Yellow/DarkYellow
+- **Trap Room**: Floor=`^` (caret) - visible hazard tiles
+- **Shrine Room**: Walls=`|`, floor=`:`, colors=Cyan/DarkCyan
+- **Secret Room**: Walls=`?`, floor=`*`, colors=Magenta/DarkMagenta
+- Corridors: Theme 1=·, Theme 2=,, Theme 3=-
+
+### Decorative Objects
+- **Torches** (`*`): Placed near walls, pulse White/DarkYellow
+- **Pillars** (`O`): In large rooms (10+ wide or 8+ tall), room corners
+- **Chests** (`$`): In treasure and secret rooms
+- **Altars** (`&`): In shrine rooms, Yellow when active, DarkGrey when used
+
+### Trap System
+- **Spike Trap**: 1-4 damage, "Spikes erupt from the floor!"
+- **Fire Trap**: 2-3 damage + 2 poison ticks, "Flames burst from the ground!"
+- **Teleport Trap**: Moves to random floor tile, "The floor vanishes beneath you!"
+- **Alarm Trap**: Wakes all monsters, "An alarm sounds!"
+- Traps trigger once then deactivate
+
+### Shrine Buffs
+- **Strength**: +2 STR for rest of floor
+- **Vitality**: Heal to full HP
+- **Swiftness**: +10% dodge for rest of floor
+- **Knowledge**: +50 XP bonus
+- **Darkness**: Reveal entire floor map (fog cleared)
+- **Warding**: Next hit reduced by 5 damage
+
+### Map Tile Updates
+- Added `Tile::SecretDoor` for secret room entrances (looks like wall, walkable)
+- Updated corridor detection in `render_tile()` for floor-specific corridor chars
+
+---
+
 ## v0.4.1 — UI/UX Visual Overhaul
 *2026-03-28*
 

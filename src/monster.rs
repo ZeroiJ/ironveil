@@ -1692,7 +1692,9 @@ impl Monster {
 
             for tx in sx..=ex {
                 for ty in sy..=ey {
-                    if map.tiles[tx][ty] == crate::map::Tile::Wall {
+                    if map.tiles[tx][ty] == crate::map::Tile::Wall
+                        || map.tiles[tx][ty] == crate::map::Tile::SecretDoor
+                    {
                         let d = Map::distance(self.x, self.y, tx, ty);
                         if d < best_dist {
                             best_dist = d;

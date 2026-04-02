@@ -14,7 +14,7 @@ use crossterm::{
     terminal::{self, Clear, ClearType},
 };
 use items::{Item, ItemType};
-use map::{Map, Tile};
+use map::{DecoObject, Map, RoomType, Tile};
 use monster::{Monster, MonsterAction};
 use player::{AbilityType, Class, Player};
 use projectile::Projectile;
@@ -35,7 +35,7 @@ fn render_map(stdout: &mut std::io::Stdout, map: &Map, floor: i32) -> std::io::R
             execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
             let visible = map.current_visibility[x][y];
             let seen = map.visibility[x][y];
-            render_tile(stdout, map.tiles[x][y], floor, visible, seen)?;
+            render_tile(stdout, map.tiles[x][y], map, x, y, floor, visible, seen)?;
         }
     }
     Ok(())
@@ -55,7 +55,16 @@ fn render_map_delta(
 
             if now_visible != was_visible {
                 execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
-                render_tile(stdout, map.tiles[x][y], floor, now_visible, now_explored)?;
+                render_tile(
+                    stdout,
+                    map.tiles[x][y],
+                    map,
+                    x,
+                    y,
+                    floor,
+                    now_visible,
+                    now_explored,
+                )?;
                 prev_visibility[x][y] = now_visible;
             }
         }
@@ -66,6 +75,9 @@ fn render_map_delta(
 fn render_tile(
     stdout: &mut std::io::Stdout,
     tile: Tile,
+    map: &Map,
+    x: usize,
+    y: usize,
     floor: i32,
     visible: bool,
     seen: bool,
@@ -75,45 +87,87 @@ fn render_tile(
         return Ok(());
     }
 
-    let (wall_color, floor_color) = if floor <= 3 {
-        (Color::Grey, Color::DarkGrey)
-    } else if floor <= 6 {
-        (Color::DarkYellow, Color::DarkGrey)
-    } else {
-        (Color::DarkRed, Color::DarkMagenta)
+    let room_type = map.get_room_type_at(x, y);
+
+    let mut wall_char = match floor {
+        1..=3 => '#',
+        4..=6 => '%',
+        _ => '+',
+    };
+    let mut floor_char = match floor {
+        1..=3 => '.',
+        4..=6 => '.',
+        _ => '~',
+    };
+    let corridor_char = match floor {
+        1..=3 => '·',
+        4..=6 => ',',
+        _ => '~',
+    };
+    let mut wall_color = match floor {
+        1..=3 => Color::Grey,
+        4..=6 => Color::DarkYellow,
+        _ => Color::DarkRed,
+    };
+    let mut floor_color = match floor {
+        1..=3 => Color::DarkGrey,
+        4..=6 => Color::DarkGrey,
+        _ => Color::DarkMagenta,
     };
 
-    let (wall_color, floor_color) = if visible {
-        (wall_color, floor_color)
-    } else {
-        let dim_wall = match wall_color {
-            Color::Grey => Color::DarkGrey,
-            Color::DarkYellow => Color::DarkGrey,
-            Color::DarkRed => Color::DarkGrey,
-            _ => Color::DarkGrey,
-        };
-        (dim_wall, Color::Black)
-    };
+    match room_type {
+        RoomType::Treasure => {
+            wall_color = Color::Yellow;
+            floor_color = Color::DarkYellow;
+        }
+        RoomType::Trap => {
+            floor_char = '^';
+        }
+        RoomType::Shrine => {
+            wall_char = '|';
+            floor_char = ':';
+            wall_color = Color::Cyan;
+            floor_color = Color::DarkCyan;
+        }
+        RoomType::Secret => {
+            wall_char = '?';
+            floor_char = '*';
+            wall_color = Color::Magenta;
+            floor_color = Color::DarkMagenta;
+        }
+        _ => {}
+    }
 
-    let color = match tile {
-        Tile::Wall => wall_color,
-        Tile::Floor => floor_color,
+    if !visible {
+        wall_color = Color::DarkGrey;
+        floor_color = Color::Black;
+    }
+
+    match tile {
+        Tile::Wall | Tile::SecretDoor => {
+            execute!(stdout, SetForegroundColor(wall_color), Print(wall_char))?
+        }
+        Tile::Floor => {
+            let floor_char = if map.is_corridor(x, y) {
+                match floor {
+                    1..=3 => '·',
+                    4..=6 => ',',
+                    _ => '-',
+                }
+            } else {
+                floor_char
+            };
+            execute!(stdout, SetForegroundColor(floor_color), Print(floor_char))?;
+        }
         Tile::Stairs => {
-            if visible {
-                Color::White
+            let color = if visible {
+                Color::Yellow
             } else {
                 Color::DarkGrey
-            }
+            };
+            execute!(stdout, SetForegroundColor(color), Print('>'))?;
         }
-    };
-
-    let glyph = match tile {
-        Tile::Wall => "#",
-        Tile::Floor => ".",
-        Tile::Stairs => ">",
-    };
-
-    execute!(stdout, SetForegroundColor(color), Print(glyph))?;
+    }
     Ok(())
 }
 
@@ -222,6 +276,41 @@ fn render_ground_items(
     Ok(())
 }
 
+fn render_deco_objects(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    pulse_on: bool,
+) -> std::io::Result<()> {
+    for (&(x, y), deco) in &map.deco_objects {
+        if !map.current_visibility[x][y] {
+            continue;
+        }
+
+        let (char, color) = match deco {
+            DecoObject::Torch => {
+                if pulse_on {
+                    ('*', Color::White)
+                } else {
+                    ('*', Color::DarkYellow)
+                }
+            }
+            DecoObject::Pillar => ('O', Color::Grey),
+            DecoObject::Altar => {
+                if map.shrine_used.contains(&(x, y)) {
+                    ('&', Color::DarkGrey)
+                } else {
+                    ('&', Color::Yellow)
+                }
+            }
+            DecoObject::Chest => ('$', Color::Yellow),
+        };
+
+        execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
+        execute!(stdout, SetForegroundColor(color), Print(char))?;
+    }
+    Ok(())
+}
+
 fn render_minimap(
     stdout: &mut std::io::Stdout,
     map: &Map,
@@ -305,13 +394,13 @@ fn render_minimap(
 
             if real_x < map.width && real_y < map.height && map.visibility[real_x][real_y] {
                 let (glyph, color) = match map.tiles[real_x][real_y] {
-                    Tile::Wall => ("#", Color::DarkGrey),
+                    Tile::Wall | Tile::SecretDoor => ("#", Color::DarkGrey),
                     Tile::Floor | Tile::Stairs => (".", Color::Black),
                 };
 
                 let color = if map.current_visibility[real_x][real_y] {
                     match map.tiles[real_x][real_y] {
-                        Tile::Wall => Color::Grey,
+                        Tile::Wall | Tile::SecretDoor => Color::Grey,
                         _ => Color::DarkGrey,
                     }
                 } else {
@@ -652,11 +741,12 @@ fn erase_entity(
     map: &Map,
     x: usize,
     y: usize,
+    floor: i32,
 ) -> std::io::Result<()> {
     execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
     let visible = map.current_visibility[x][y];
     let seen = map.visibility[x][y];
-    render_tile(stdout, map.tiles[x][y], 1, visible, seen)?;
+    render_tile(stdout, map.tiles[x][y], map, x, y, floor, visible, seen)?;
     Ok(())
 }
 
@@ -692,12 +782,13 @@ fn process_projectiles(
     player: &mut Player,
     map: &Map,
     log: &mut Vec<String>,
+    floor: i32,
 ) -> std::io::Result<()> {
     let mut i = 0;
     while i < projectiles.len() {
         let old_x = projectiles[i].x;
         let old_y = projectiles[i].y;
-        erase_entity(stdout, map, old_x, old_y)?;
+        erase_entity(stdout, map, old_x, old_y, floor)?;
 
         let still_alive = projectiles[i].advance(map);
 
@@ -721,7 +812,7 @@ fn process_projectiles(
                 player.last_damage_source = Some(("Arrow".to_string(), dmg));
                 player.take_damage(dmg);
                 player.damage_taken += dmg;
-                log.push(format!("➤ An arrow hits you for {} damage!", dmg));
+                log.push(format!("<< An arrow hits you for {} damage!", dmg));
             }
             projectiles.remove(i);
             continue;
@@ -755,7 +846,7 @@ fn process_monsters(
     map: &Map,
     log: &mut Vec<String>,
     _ground_items: &mut HashMap<(usize, usize), Item>,
-    _current_floor: i32,
+    current_floor: i32,
     webs: &mut HashSet<(usize, usize)>,
 ) -> std::io::Result<()> {
     let player_pos = (player.x, player.y);
@@ -790,7 +881,7 @@ fn process_monsters(
                     log.push(msg);
                 }
                 monsters[i].death_pos = Some((monsters[i].x, monsters[i].y));
-                erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                erase_entity(stdout, map, monsters[i].x, monsters[i].y, current_floor)?;
                 continue;
             }
         }
@@ -829,7 +920,7 @@ fn process_monsters(
                     player.last_damage_source = Some((name.to_string(), dmg));
                     player.take_damage(damage);
                     player.damage_taken += dmg;
-                    log.push(format!("➤ The {} hits you for {} damage!", name, dmg));
+                    log.push(format!("<< The {} hits you for {} damage!", name, dmg));
 
                     // Stonehide Plate: trigger below 30% HP
                     if !player.stonehide_triggered && player.has_stonehide() {
@@ -924,7 +1015,7 @@ fn process_monsters(
                 }
 
                 if !blocked && map.is_walkable(nx, ny) {
-                    erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                    erase_entity(stdout, map, monsters[i].x, monsters[i].y, current_floor)?;
                     monsters[i].x = nx;
                     monsters[i].y = ny;
                     // Wraith: exiting wall -> no longer phasing
@@ -971,7 +1062,13 @@ fn process_monsters(
                                     ));
                                 }
                             } else if !blocked2 && map.is_walkable(next2.0, next2.1) {
-                                erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                                erase_entity(
+                                    stdout,
+                                    map,
+                                    monsters[i].x,
+                                    monsters[i].y,
+                                    current_floor,
+                                )?;
                                 monsters[i].x = next2.0;
                                 monsters[i].y = next2.1;
                             }
@@ -986,7 +1083,7 @@ fn process_monsters(
                     if nx == player.x && ny == player.y {
                         // Already handled by adjacent check in AI
                     } else {
-                        erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                        erase_entity(stdout, map, monsters[i].x, monsters[i].y, current_floor)?;
                         monsters[i].x = nx;
                         monsters[i].y = ny;
                         // Check if now inside a wall
@@ -1091,7 +1188,7 @@ fn process_monsters(
                             player.last_damage_source = Some(("Bone Dragon".to_string(), dmg));
                             player.take_damage(dmg);
                             player.damage_taken += dmg;
-                            log.push(format!("🔥 Dragon fire engulfs you for {} damage!", dmg));
+                            log.push(format!("[**] Dragon fire engulfs you for {} damage!", dmg));
                         }
                     }
                 }
@@ -1114,7 +1211,10 @@ fn process_monsters(
                         player.last_damage_source = Some(("Shadow Lord".to_string(), dmg));
                         player.take_damage(dmg);
                         player.damage_taken += dmg;
-                        log.push(format!("👻 Shadow energy tears at you for {} damage!", dmg));
+                        log.push(format!(
+                            "[~~] Shadow energy tears at you for {} damage!",
+                            dmg
+                        ));
                     }
                 }
             }
@@ -1150,7 +1250,7 @@ fn process_monsters(
                 if !candidates.is_empty() {
                     let idx = rng.random_range(0..candidates.len());
                     let (nx, ny) = candidates[idx];
-                    erase_entity(stdout, map, monsters[i].x, monsters[i].y)?;
+                    erase_entity(stdout, map, monsters[i].x, monsters[i].y, current_floor)?;
                     monsters[i].x = nx;
                     monsters[i].y = ny;
                     log.push(
@@ -1355,7 +1455,9 @@ fn main() -> std::io::Result<()> {
         let (term_width, term_height) = terminal::size()?;
         let map_width = term_width as usize;
         let map_height = (term_height as usize).saturating_sub(7);
-        let first_map = Map::new(map_width, map_height);
+        let mut first_map = Map::new(map_width, map_height);
+        first_map.assign_room_types(1);
+        first_map.generate_decorations();
         let (spawn_x, spawn_y) = first_map.get_starting_position();
 
         let mut player = Player::new(spawn_x, spawn_y, chosen_class);
@@ -1391,11 +1493,11 @@ fn main() -> std::io::Result<()> {
             let map_height = (term_height as usize).saturating_sub(7);
 
             let mut map = if let Some(m) = cached_map.take() {
-                // Floor 1: use the map we already generated (player spawn already set)
                 m
             } else {
-                // Subsequent floors: generate a new map and update player position
-                let m = Map::new(map_width, map_height);
+                let mut m = Map::new(map_width, map_height);
+                m.assign_room_types(current_floor);
+                m.generate_decorations();
                 let (sx, sy) = m.get_starting_position();
                 player.x = sx;
                 player.y = sy;
@@ -1482,6 +1584,7 @@ fn main() -> std::io::Result<()> {
                     &monsters,
                 )?;
                 render_webs(&mut stdout, &map, &webs)?;
+                render_deco_objects(&mut stdout, &map, true)?;
                 render_ground_items(&mut stdout, &map, &ground_items)?;
                 render_monsters(&mut stdout, &map, &monsters)?;
                 render_projectiles(&mut stdout, &projectiles)?;
@@ -1700,7 +1803,13 @@ fn main() -> std::io::Result<()> {
                                                     }
                                                     log.push(format!("FROST NOVA! {} monsters frozen for {} damage!", frozen_count, frost_dmg));
                                                     for (kx, ky, xp) in frost_kills {
-                                                        erase_entity(&mut stdout, &map, kx, ky)?;
+                                                        erase_entity(
+                                                            &mut stdout,
+                                                            &map,
+                                                            kx,
+                                                            ky,
+                                                            current_floor,
+                                                        )?;
                                                         let level_msgs = player.gain_xp(xp);
                                                         log.push(format!("+{} XP", xp));
                                                         for msg in level_msgs {
@@ -1781,12 +1890,12 @@ fn main() -> std::io::Result<()> {
                                     if let Some(a) = ability_ref {
                                         match a.ability_type {
                                             AbilityType::ShadowStep => {
-                                                // Teleport up to 4 tiles in direction, stop at walls
                                                 erase_entity(
                                                     &mut stdout,
                                                     &map,
                                                     player.x,
                                                     player.y,
+                                                    current_floor,
                                                 )?;
                                                 let mut land_x = player.x as i32;
                                                 let mut land_y = player.y as i32;
@@ -1936,7 +2045,7 @@ fn main() -> std::io::Result<()> {
                                                                 monsters[mi].y,
                                                             ));
                                                             log.push(format!(
-                                                                "✝ The {} dies!",
+                                                                "[**] The {} dies!",
                                                                 monsters[mi].name
                                                             ));
                                                             // XP reward
@@ -1951,6 +2060,7 @@ fn main() -> std::io::Result<()> {
                                                                 &map,
                                                                 monsters[mi].x,
                                                                 monsters[mi].y,
+                                                                current_floor,
                                                             )?;
                                                         }
                                                     }
@@ -2010,13 +2120,13 @@ fn main() -> std::io::Result<()> {
                                         if player.has_damage_buff() {
                                             damage *= 2;
                                             player.consume_damage_buff();
-                                            log.push("★ CRITICAL STRIKE! ★".to_string());
+                                            log.push("[!!] CRITICAL STRIKE! [!!]".to_string());
                                         }
 
                                         monsters[i].take_damage(damage);
                                         player.damage_dealt += damage;
                                         log.push(format!(
-                                            "⚔ You hit the {} for {} damage!",
+                                            ">> You hit the {} for {} damage!",
                                             monsters[i].name, damage
                                         ));
 
@@ -2032,11 +2142,20 @@ fn main() -> std::io::Result<()> {
 
                                         if !monsters[i].is_alive() {
                                             player.monsters_slain += 1;
-                                            log.push(format!("✝ The {} dies!", monsters[i].name));
+                                            log.push(format!(
+                                                "[**] The {} dies!",
+                                                monsters[i].name
+                                            ));
                                             monsters[i].death_pos =
                                                 Some((monsters[i].x, monsters[i].y));
                                             let dpos = (monsters[i].x, monsters[i].y);
-                                            erase_entity(&mut stdout, &map, dpos.0, dpos.1)?;
+                                            erase_entity(
+                                                &mut stdout,
+                                                &map,
+                                                dpos.0,
+                                                dpos.1,
+                                                current_floor,
+                                            )?;
 
                                             // XP reward
                                             let xp = monsters[i].xp_value();
@@ -2140,7 +2259,13 @@ fn main() -> std::io::Result<()> {
                                     }
                                 } else if map.is_walkable(next_x, next_y) {
                                     // --- PLAYER MOVEMENT ---
-                                    erase_entity(&mut stdout, &map, player.x, player.y)?;
+                                    erase_entity(
+                                        &mut stdout,
+                                        &map,
+                                        player.x,
+                                        player.y,
+                                        current_floor,
+                                    )?;
 
                                     // Web stuck: skip movement if player is stuck
                                     if player_web_stuck > 0 {
@@ -2175,6 +2300,96 @@ fn main() -> std::io::Result<()> {
                                             );
                                         }
 
+                                        // Check if player stepped on a trap
+                                        if let Some(trap_type) =
+                                            map.trap_tiles.remove(&(player.x, player.y))
+                                        {
+                                            match trap_type {
+                                                map::TrapType::Spike => {
+                                                    let dmg = rand::rng().random_range(1..=4);
+                                                    player.take_damage(dmg);
+                                                    player.damage_taken += dmg;
+                                                    log.push(format!(
+                                                        "Spikes erupt from the floor! (-{} HP)",
+                                                        dmg
+                                                    ));
+                                                }
+                                                map::TrapType::Fire => {
+                                                    let dmg = rand::rng().random_range(2..=3);
+                                                    player.take_damage(dmg);
+                                                    player.damage_taken += dmg;
+                                                    player.poison_ticks = 2;
+                                                    log.push(format!("Flames burst from the ground! (-{} HP, burning!)", dmg));
+                                                }
+                                                map::TrapType::Teleport => {
+                                                    let (tx, ty) = map.get_starting_position();
+                                                    player.x = tx;
+                                                    player.y = ty;
+                                                    map.update_visibility(player.x, player.y, 8);
+                                                    log.push(
+                                                        "The floor vanishes beneath you!"
+                                                            .to_string(),
+                                                    );
+                                                }
+                                                map::TrapType::Alarm => {
+                                                    log.push("An alarm sounds!".to_string());
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            m.can_see_player = true;
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Check shrine altar interaction
+                                        if let Some(DecoObject::Altar) =
+                                            map.deco_objects.get(&(player.x, player.y))
+                                        {
+                                            if !map.shrine_used.contains(&(player.x, player.y)) {
+                                                map.shrine_used.insert((player.x, player.y));
+                                                let mut rng = rand::rng();
+                                                let buff_msg = match rng.random_range(0..6) {
+                                                    0 => {
+                                                        player.bonus_str += 2;
+                                                        "Strength (+2 STR for this floor)"
+                                                    }
+                                                    1 => {
+                                                        player.hp = player.max_hp;
+                                                        "Vitality (fully healed)"
+                                                    }
+                                                    2 => {
+                                                        player.bonus_dodge += 10;
+                                                        "Swiftness (+10% dodge for this floor)"
+                                                    }
+                                                    3 => {
+                                                        let bonus_xp = 50;
+                                                        let msgs = player.gain_xp(bonus_xp);
+                                                        for m in msgs {
+                                                            log.push(m);
+                                                        }
+                                                        "Knowledge (+50 XP)"
+                                                    }
+                                                    4 => {
+                                                        for x in 0..map.width {
+                                                            for y in 0..map.height {
+                                                                map.visibility[x][y] = true;
+                                                            }
+                                                        }
+                                                        "Darkness (map revealed!)"
+                                                    }
+                                                    _ => {
+                                                        player.warding_buff = true;
+                                                        "Warding (next hit reduced by 5)"
+                                                    }
+                                                };
+                                                log.push(format!(
+                                                    "The shrine pulses... {}!",
+                                                    buff_msg
+                                                ));
+                                            }
+                                        }
+
                                         // Check stairs
                                         if map.tiles[player.x][player.y] == Tile::Stairs {
                                             // Block descent if a boss is alive
@@ -2184,7 +2399,9 @@ fn main() -> std::io::Result<()> {
                                                 log.push("The stairs are sealed by a dark power! Defeat the boss first!".to_string());
                                             } else {
                                                 current_floor += 1;
-                                                // XP for descending
+                                                player.bonus_str = 0;
+                                                player.bonus_dodge = 0;
+                                                player.warding_buff = false;
                                                 let floor_xp = current_floor * 5;
                                                 let level_msgs = player.gain_xp(floor_xp);
                                                 // Enhanced floor transition message
@@ -2254,6 +2471,7 @@ fn main() -> std::io::Result<()> {
                         &mut player,
                         &map,
                         &mut log,
+                        current_floor,
                     )?;
 
                     process_monsters(

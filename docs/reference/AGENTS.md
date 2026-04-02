@@ -1,12 +1,12 @@
 # PROJECT KNOWLEDGE BASE
 
-**Generated:** 2026-03-25
-**Commit:** 7dc9c9b
+**Generated:** 2026-04-02
+**Commit:** (latest)
 **Branch:** master
 
 ## OVERVIEW
 
-Terminal-based roguelike game "Ironveil" written in Rust. Uses crossterm for terminal rendering. Turn-based dungeon crawler with procedural generation, combat, inventory, and multiple character classes.
+Terminal-based roguelike game "Ironveil" written in Rust. Uses crossterm for terminal rendering. Turn-based dungeon crawler with procedural generation, combat, inventory, special rooms, and multiple character classes.
 
 ## STRUCTURE
 
@@ -14,23 +14,24 @@ Terminal-based roguelike game "Ironveil" written in Rust. Uses crossterm for ter
 ironveil/
 ├── src/
 │   ├── main.rs       # Game loop, rendering, input handling
-│   ├── map.rs        # Procedural map generation, visibility
+│   ├── map.rs        # Procedural map generation, visibility, room types
 │   ├── monster.rs    # Monster AI, behaviors, types
-│   ├── player.rs     # Player state, stats, abilities
+│   ├── player.rs     # Player state, stats, abilities, shrine buffs
 │   ├── items.rs      # Item definitions, loot generation
 │   ├── ui.rs         # Character creation, inventory screens
 │   ├── projectile.rs # Arrow/projectile handling
 │   └── save_load.rs  # Game save/load
-├── docs/             # Documentation
-│   ├── AGENTS.md     # This file
-│   ├── BIOMES.md     # Biome definitions
-│   ├── CLASSES.md    # Character classes
-│   ├── CONTROLS.md   # Input controls
-│   ├── ITEMS.md      # Item database
-│   ├── MONSTERS.md   # Monster encyclopedia
-│   └── *.md          # Plans and improvements
-├── CHANGELOG.md      # Version history
-├── Cargo.toml        # crossterm, rand, serde
+├── docs/
+│   ├── design/       # Design documents
+│   │   ├── IRONVEIL_MAP_DESIGN.md
+│   │   ├── IRONVEIL_PROCGEN_DESIGN.md
+│   │   └── IRONVEIL_ASCII_ART.md
+│   ├── features/    # Game features
+│   ├── planning/     # Implementation plans
+│   ├── research/    # Research notes
+│   └── reference/  # References (this file, improvements)
+├── CHANGELOG.md     # Version history
+├── Cargo.toml       # crossterm, rand, serde
 └── target/          # Build output
 ```
 
@@ -49,13 +50,26 @@ ironveil/
 
 | Symbol | Type | Location | Role |
 |--------|------|----------|------|
-| `Map` | struct | map.rs:13 | Dungeon map, tiles, visibility |
-| `Player` | struct | player.rs:17 | Player state, HP, stats |
+| `Map` | struct | map.rs:41 | Dungeon map, tiles, rooms, visibility |
+| `Player` | struct | player.rs:299 | Player state, HP, stats, buffs |
 | `Monster` | struct | monster.rs:50 | Enemies with AI |
-| `Tile` | enum | map.rs:6 | Wall/Floor/Stairs |
+| `Tile` | enum | map.rs:5 | Wall/Floor/Stairs/SecretDoor |
+| `RoomType` | enum | map.rs:13 | Normal/Treasure/Trap/Shrine/Secret/Boss/Spawn |
+| `DecoObject` | enum | map.rs:24 | Torch/Pillar/Altar/Chest |
 | `Class` | enum | player.rs:5 | Warrior/Rogue/Mage |
-| `render_map` | fn | main.rs:30 | Render entire map |
-| `reveal_area` | fn | map.rs:115 | Fog of war (disabled) |
+| `render_tile` | fn | main.rs:75 | Render tiles with room type theming |
+| `render_deco_objects` | fn | main.rs:277 | Render decorative objects |
+
+## KEY FUNCTIONS
+
+| Function | File | Purpose |
+|----------|------|---------|
+| `Map::new` | map.rs:81 | Generate dungeon with rooms and corridors |
+| `Map::assign_room_types` | map.rs:176 | Assign special rooms per floor |
+| `Map::generate_decorations` | map.rs:634 | Place torches, pillars, chests, altars |
+| `Map::get_room_type_at` | map.rs:625 | Get room type for coordinate |
+| `render_deco_objects` | main.rs:277 | Render torches (pulsing), pillars, altars, chests |
+| Player movement | main.rs:2200+ | Trap triggers, shrine interactions |
 
 ## CONVENTIONS
 
@@ -72,10 +86,13 @@ ironveil/
 
 ## UNIQUE STYLES
 
-- Large single-file modules (main.rs 1575 lines, monster.rs 2400+ lines)
-- Procedural room generation with corridors
+- Large single-file modules (main.rs 2500+ lines, monster.rs 2383 lines)
+- Procedural room generation with corridors and special rooms
 - Turn-based with monster tick timer (500ms)
 - Character creation screen before game start
+- Special rooms: Treasure, Trap, Shrine, Secret with unique visuals
+- Decorative objects: torches (pulsing), pillars, altars, chests
+- Floor-specific tile themes (dungeon/cavern/void)
 
 ## COMMANDS
 

@@ -329,6 +329,10 @@ pub struct Player {
     pub damage_taken: i32,
     pub cause_of_death: String,
     pub last_damage_source: Option<(String, i32)>,
+    // Shrine buffs (temporary for floor)
+    pub bonus_str: i32,
+    pub bonus_dodge: i32,
+    pub warding_buff: bool,
 }
 
 pub const INVENTORY_CAPACITY: usize = 10;
@@ -373,6 +377,9 @@ impl Player {
             damage_taken: 0,
             cause_of_death: String::new(),
             last_damage_source: None,
+            bonus_str: 0,
+            bonus_dodge: 0,
+            warding_buff: false,
         }
     }
 

@@ -1,12 +1,40 @@
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Tile {
     Wall,
     Floor,
     Stairs,
+    SecretDoor,
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum RoomType {
+    Normal,
+    Treasure,
+    Trap,
+    Shrine,
+    Secret,
+    Boss,
+    Spawn,
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DecoObject {
+    Torch,
+    Pillar,
+    Altar,
+    Chest,
+}
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum TrapType {
+    Spike,
+    Fire,
+    Teleport,
+    Alarm,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -15,8 +43,12 @@ pub struct Map {
     pub height: usize,
     pub tiles: Vec<Vec<Tile>>,
     pub rooms: Vec<Rect>,
-    pub visibility: Vec<Vec<bool>>, // true if tile has been seen
-    pub current_visibility: Vec<Vec<bool>>, // true if tile is currently visible
+    pub room_types: Vec<RoomType>,
+    pub deco_objects: HashMap<(usize, usize), DecoObject>,
+    pub trap_tiles: HashMap<(usize, usize), TrapType>,
+    pub shrine_used: HashSet<(usize, usize)>,
+    pub visibility: Vec<Vec<bool>>,
+    pub current_visibility: Vec<Vec<bool>>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -128,13 +160,80 @@ impl Map {
             rooms.push(boss_room);
         }
 
+        let room_types = vec![RoomType::Normal; rooms.len()];
+
         Map {
             width,
             height,
             tiles,
             rooms,
+            room_types,
+            deco_objects: HashMap::new(),
+            trap_tiles: HashMap::new(),
+            shrine_used: HashSet::new(),
             visibility: vec![vec![false; height]; width],
             current_visibility: vec![vec![false; height]; width],
+        }
+    }
+
+    pub fn assign_room_types(&mut self, floor: i32) {
+        if self.rooms.is_empty() {
+            return;
+        }
+
+        self.room_types[0] = RoomType::Spawn;
+        if self.rooms.len() > 1 {
+            self.room_types[self.rooms.len() - 1] = RoomType::Boss;
+        }
+
+        let mut rng = rand::rng();
+        let special_chance = rng.random_range(0..100);
+
+        if special_chance < 33 && self.rooms.len() > 2 {
+            let candidates: Vec<usize> = (1..self.rooms.len() - 1)
+                .filter(|&i| self.room_types[i] == RoomType::Normal)
+                .collect();
+
+            if !candidates.is_empty() {
+                let room_idx = candidates[rng.random_range(0..candidates.len())];
+                let room_type = match floor {
+                    1..=3 => {
+                        let r = rng.random_range(0..100);
+                        if r < 50 {
+                            RoomType::Treasure
+                        } else if r < 80 {
+                            RoomType::Trap
+                        } else {
+                            RoomType::Shrine
+                        }
+                    }
+                    4..=9 => {
+                        let r = rng.random_range(0..100);
+                        if r < 30 {
+                            RoomType::Treasure
+                        } else if r < 65 {
+                            RoomType::Trap
+                        } else if r < 85 {
+                            RoomType::Shrine
+                        } else {
+                            RoomType::Secret
+                        }
+                    }
+                    _ => {
+                        let r = rng.random_range(0..100);
+                        if r < 20 {
+                            RoomType::Treasure
+                        } else if r < 50 {
+                            RoomType::Trap
+                        } else if r < 70 {
+                            RoomType::Shrine
+                        } else {
+                            RoomType::Secret
+                        }
+                    }
+                };
+                self.room_types[room_idx] = room_type;
+            }
         }
     }
 
@@ -283,7 +382,10 @@ impl Map {
 
     pub fn is_walkable(&self, x: usize, y: usize) -> bool {
         if x < self.width && y < self.height {
-            self.tiles[x][y] == Tile::Floor || self.tiles[x][y] == Tile::Stairs
+            matches!(
+                self.tiles[x][y],
+                Tile::Floor | Tile::Stairs | Tile::SecretDoor
+            )
         } else {
             false
         }
@@ -520,6 +622,15 @@ impl Map {
         (wall_left && wall_right) || (wall_up && wall_down)
     }
 
+    pub fn get_room_type_at(&self, x: usize, y: usize) -> RoomType {
+        for (i, room) in self.rooms.iter().enumerate() {
+            if x >= room.x1 && x < room.x2 && y >= room.y1 && y < room.y2 {
+                return self.room_types[i];
+            }
+        }
+        RoomType::Normal
+    }
+
     pub fn get_starting_position(&self) -> (usize, usize) {
         for x in 0..self.width {
             for y in 0..self.height {
@@ -529,5 +640,103 @@ impl Map {
             }
         }
         (1, 1)
+    }
+
+    pub fn generate_decorations(&mut self) {
+        let mut rng = rand::rng();
+
+        for (i, room_type) in self.room_types.iter().enumerate() {
+            let room = &self.rooms[i];
+
+            match room_type {
+                RoomType::Treasure => {
+                    let (cx, cy) = room.center();
+                    self.deco_objects.insert((cx, cy), DecoObject::Chest);
+                }
+                RoomType::Shrine => {
+                    let (cx, cy) = room.center();
+                    self.deco_objects.insert((cx, cy), DecoObject::Altar);
+                    if room.x2 - room.x1 > 10 || room.y2 - room.y1 > 8 {
+                        let pillar_positions = [
+                            (room.x1 + 2, room.y1 + 2),
+                            (room.x2 - 3, room.y1 + 2),
+                            (room.x1 + 2, room.y2 - 3),
+                            (room.x2 - 3, room.y2 - 3),
+                        ];
+                        for &(px, py) in &pillar_positions {
+                            if px < self.width && py < self.height {
+                                self.deco_objects.insert((px, py), DecoObject::Pillar);
+                            }
+                        }
+                    }
+                }
+                RoomType::Normal | RoomType::Trap => {
+                    let torch_count = rng.random_range(1..=2);
+                    for _ in 0..torch_count {
+                        for y in (room.y1 + 1)..(room.y2 - 1) {
+                            for x in (room.x1 + 1)..(room.x2 - 1) {
+                                if self.tiles[x][y] == Tile::Floor {
+                                    let has_wall_neighbor = (x > 0
+                                        && self.tiles[x - 1][y] == Tile::Wall)
+                                        || (x < self.width - 1
+                                            && self.tiles[x + 1][y] == Tile::Wall)
+                                        || (y > 0 && self.tiles[x][y - 1] == Tile::Wall)
+                                        || (y < self.height - 1
+                                            && self.tiles[x][y + 1] == Tile::Wall);
+                                    if has_wall_neighbor && rng.random_bool(0.3) {
+                                        self.deco_objects.insert((x, y), DecoObject::Torch);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if room.x2 - room.x1 > 10 || room.y2 - room.y1 > 8 {
+                        let pillar_positions = [
+                            (room.x1 + 2, room.y1 + 2),
+                            (room.x2 - 3, room.y1 + 2),
+                            (room.x1 + 2, room.y2 - 3),
+                            (room.x2 - 3, room.y2 - 3),
+                        ];
+                        for &(px, py) in &pillar_positions {
+                            if px < self.width && py < self.height {
+                                self.deco_objects.insert((px, py), DecoObject::Pillar);
+                            }
+                        }
+                    }
+                }
+                RoomType::Secret => {
+                    let (cx, cy) = room.center();
+                    self.deco_objects.insert((cx, cy), DecoObject::Chest);
+                    if room.x2 - room.x1 > 6 && room.y2 - room.y1 > 6 {
+                        for dy in 2..(room.y2 - room.y1 - 2) {
+                            for dx in 2..(room.x2 - room.x1 - 2) {
+                                let rx = room.x1 + dx;
+                                let ry = room.y1 + dy;
+                                if self.tiles[rx][ry] == Tile::Floor && rng.random_bool(0.1) {
+                                    self.deco_objects.insert((rx, ry), DecoObject::Chest);
+                                }
+                            }
+                        }
+                    }
+                }
+                RoomType::Trap => {
+                    for y in (room.y1 + 1)..(room.y2 - 1) {
+                        for x in (room.x1 + 1)..(room.x2 - 1) {
+                            if self.tiles[x][y] == Tile::Floor && rng.random_bool(0.2) {
+                                let trap_type = match rng.random_range(0..4) {
+                                    0 => TrapType::Spike,
+                                    1 => TrapType::Fire,
+                                    2 => TrapType::Teleport,
+                                    _ => TrapType::Alarm,
+                                };
+                                self.trap_tiles.insert((x, y), trap_type);
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
