@@ -7,6 +7,7 @@ mod projectile;
 mod save_load;
 mod ui;
 
+use affixes::{apply_affixes, generate_exotic, ExoticType, Prefix, Suffix};
 use crossterm::{
     cursor,
     event::{self, Event, KeyCode},
@@ -14,7 +15,6 @@ use crossterm::{
     style::{Color, Print, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
-use affixes::{apply_affixes, generate_exotic, ExoticType, Prefix, Suffix};
 use items::{Item, ItemType};
 use map::{DecoObject, Map, RoomType, Tile};
 use monster::{Monster, MonsterAction};
@@ -2031,14 +2031,32 @@ fn main() -> std::io::Result<()> {
                                                     a.is_active = false;
                                                     let px = player.x;
                                                     let py = player.y;
-                                                    let knife_dmg =
+                                                    let base_dmg =
                                                         2 + player.effective_stats().potion_bonus();
                                                     let mut hit_count = 0;
+                                                    let mut enchanted = false;
+                                                    for m in monsters.iter() {
+                                                        if m.is_alive()
+                                                            && m.poison_ticks > 0
+                                                            && Map::distance(px, py, m.x, m.y) <= 4
+                                                        {
+                                                            enchanted = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                    if enchanted {
+                                                        log.push("ENCHANTED BLADES! Poison coats every blade!".to_string());
+                                                    }
                                                     for m in monsters.iter_mut() {
                                                         if m.is_alive() {
                                                             let d = Map::distance(px, py, m.x, m.y);
                                                             if d <= 4 {
-                                                                m.take_damage(knife_dmg);
+                                                                let dmg = if enchanted {
+                                                                    base_dmg + 1
+                                                                } else {
+                                                                    base_dmg
+                                                                };
+                                                                m.take_damage(dmg);
                                                                 hit_count += 1;
                                                                 if !m.is_alive() {
                                                                     m.death_pos = Some((m.x, m.y));
@@ -2050,7 +2068,7 @@ fn main() -> std::io::Result<()> {
                                                             }
                                                         }
                                                     }
-                                                    log.push(format!("FAN OF KNIVES! {} enemies hit for {} damage!", hit_count, knife_dmg));
+                                                    log.push(format!("FAN OF KNIVES! {} enemies hit for {} damage!", hit_count, if enchanted { base_dmg + 1 } else { base_dmg }));
                                                 }
                                                 AbilityType::ManaShield => {
                                                     a.activate();
@@ -2101,7 +2119,10 @@ fn main() -> std::io::Result<()> {
                                                             }
                                                         }
                                                     }
-                                                    log.push(format!("EARTHQUAKE! {} enemies hit for {} damage and stunned!", hit_count, quake_dmg));
+                                                    log.push(format!(
+                                                        "EARTHQUAKE! {} enemies hit and stunned!",
+                                                        hit_count
+                                                    ));
                                                 }
                                                 AbilityType::Assassinate => {
                                                     player.pending_ability_direction = Some(5);
@@ -2131,192 +2152,45 @@ fn main() -> std::io::Result<()> {
                                                     if let Some(idx) = nearest_idx {
                                                         let (mx, my) =
                                                             (monsters[idx].x, monsters[idx].y);
-                                                        monsters[idx].take_damage(meteor_dmg);
-                                                        log.push(format!(
-                                                            "METEOR strikes {} for {} damage!",
-                                                            monsters[idx].name, meteor_dmg
-                                                        ));
-                                                        for sm in monsters.iter_mut() {
-                                                            if sm.is_alive() {
-                                                                let d = Map::distance(
-                                                                    mx, my, sm.x, sm.y,
-                                                                );
-                                                                if d <= 2 {
-                                                                    let splash =
-                                                                        (meteor_dmg / 2).max(1);
-                                                                    sm.take_damage(splash);
-                                                                    if !sm.is_alive() {
-                                                                        sm.death_pos =
-                                                                            Some((sm.x, sm.y));
-                                                                        log.push(format!(
-                                                                            "Splash hit {}!",
-                                                                            sm.name
-                                                                        ));
+                                                        let mut final_dmg = meteor_dmg;
+
+                                                        let poison_ticks =
+                                                            monsters[idx].poison_ticks;
+                                                        if poison_ticks > 0 {
+                                                            let poison_bonus = poison_ticks * 2;
+                                                            final_dmg += poison_bonus;
+                                                            monsters[idx].poison_ticks = 0;
+                                                            log.push(format!(
+                                                                "VENOM IGNITION! Toxic gas spreads!"
+                                                            ));
+                                                            let poison_dmg = poison_bonus;
+                                                            for sm in monsters.iter_mut() {
+                                                                if sm.is_alive() {
+                                                                    let d = Map::distance(
+                                                                        mx, my, sm.x, sm.y,
+                                                                    );
+                                                                    if d <= 2
+                                                                        && (sm.x != mx
+                                                                            || sm.y != my)
+                                                                    {
+                                                                        sm.take_damage(poison_dmg);
+                                                                        if !sm.is_alive() {
+                                                                            sm.death_pos =
+                                                                                Some((sm.x, sm.y));
+                                                                            log.push(format!(
+                                                                                "Toxic gas killed {}!",
+                                                                                sm.name
+                                                                            ));
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
-                                                        if !monsters[idx].is_alive() {
-                                                            monsters[idx].death_pos = Some((
-                                                                monsters[idx].x,
-                                                                monsters[idx].y,
-                                                            ));
-                                                        }
-                                                    } else {
-                                                        log.push(
-                                                            "Meteor - no target in range!"
-                                                                .to_string(),
-                                                        );
-                                                    }
-                                                }
-                                                _ => {}
-                                            }
-                                        } else if a.cooldown_remaining > 0 {
-                                            log.push(format!(
-                                                "{} on cooldown ({} ticks).",
-                                                a.name, a.cooldown_remaining
-                                            ));
-                                        }
-                                    } else {
-                                        log.push(
-                                            "Ultimate ability unlocks at level 20.".to_string(),
-                                        );
-                                    }
-                                    continue 'inner;
-                                }
-                                KeyCode::Char('4') => {
-                                    if let Some(ref mut a) = player.ability_4 {
-                                        if a.is_ready() && !a.is_active {
-                                            match a.ability_type {
-                                                AbilityType::BattleCry => {
-                                                    a.activate();
-                                                    a.is_active = false;
-                                                    let px = player.x;
-                                                    let py = player.y;
-                                                    let mut affected = 0;
-                                                    for m in monsters.iter_mut() {
-                                                        if m.is_alive() {
-                                                            let d = Map::distance(px, py, m.x, m.y);
-                                                            if d <= 4 {
-                                                                m.attack_reduction = 2;
-                                                                affected += 1;
-                                                            }
-                                                        }
-                                                    }
-                                                    log.push(format!(
-                                                        "BATTLE CRY! {} enemies weakened!",
-                                                        affected
-                                                    ));
-                                                }
-                                                AbilityType::FanOfKnives => {
-                                                    a.activate();
-                                                    a.is_active = false;
-                                                    let px = player.x;
-                                                    let py = player.y;
-                                                    let knife_dmg =
-                                                        2 + player.effective_stats().potion_bonus();
-                                                    let mut hit_count = 0;
-                                                    for m in monsters.iter_mut() {
-                                                        if m.is_alive() {
-                                                            let d = Map::distance(px, py, m.x, m.y);
-                                                            if d <= 4 {
-                                                                m.take_damage(knife_dmg);
-                                                                hit_count += 1;
-                                                                if !m.is_alive() {
-                                                                    m.death_pos = Some((m.x, m.y));
-                                                                    log.push(format!(
-                                                                        "Fan of Knives hit {}!",
-                                                                        m.name
-                                                                    ));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    log.push(format!("FAN OF KNIVES! {} enemies hit for {} damage!", hit_count, knife_dmg));
-                                                }
-                                                AbilityType::ManaShield => {
-                                                    a.activate();
-                                                    player.mana_shield_ticks = 5;
-                                                    log.push("MANA SHIELD activated! Absorbing damage for 5 turns.".to_string());
-                                                }
-                                                _ => {}
-                                            }
-                                        } else if a.cooldown_remaining > 0 {
-                                            log.push(format!(
-                                                "{} on cooldown ({} ticks).",
-                                                a.name, a.cooldown_remaining
-                                            ));
-                                        }
-                                    } else {
-                                        log.push("Fourth ability unlocks at level 15.".to_string());
-                                    }
-                                    continue 'inner;
-                                }
-                                KeyCode::Char('5') => {
-                                    if let Some(ref mut a) = player.ability_5 {
-                                        if a.is_ready() && !a.is_active {
-                                            match a.ability_type {
-                                                AbilityType::Earthquake => {
-                                                    a.activate();
-                                                    a.is_active = false;
-                                                    let px = player.x;
-                                                    let py = player.y;
-                                                    let quake_dmg =
-                                                        8 + player.effective_stats().potion_bonus();
-                                                    let mut hit_count = 0;
-                                                    let mut stun_count = 0;
-                                                    for m in monsters.iter_mut() {
-                                                        if m.is_alive() {
-                                                            let d = Map::distance(px, py, m.x, m.y);
-                                                            if d <= 5 {
-                                                                m.take_damage(quake_dmg);
-                                                                m.stun_ticks = 2;
-                                                                hit_count += 1;
-                                                                stun_count += 1;
-                                                                if !m.is_alive() {
-                                                                    m.death_pos = Some((m.x, m.y));
-                                                                    log.push(format!(
-                                                                        "Earthquake crushed {}!",
-                                                                        m.name
-                                                                    ));
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                    log.push(format!("EARTHQUAKE! {} enemies hit for {} damage and stunned!", hit_count, quake_dmg));
-                                                }
-                                                AbilityType::Assassinate => {
-                                                    player.pending_ability_direction = Some(5);
-                                                    log.push(format!(
-                                                        "{} — choose direction (arrow key).",
-                                                        a.name
-                                                    ));
-                                                }
-                                                AbilityType::Meteor => {
-                                                    a.activate();
-                                                    a.is_active = false;
-                                                    let px = player.x;
-                                                    let py = player.y;
-                                                    let meteor_dmg = 10
-                                                        + player.effective_stats().potion_bonus();
-                                                    let mut nearest_idx: Option<usize> = None;
-                                                    let mut nearest_dist = 999;
-                                                    for (i, m) in monsters.iter_mut().enumerate() {
-                                                        if m.is_alive() {
-                                                            let d = Map::distance(px, py, m.x, m.y);
-                                                            if d < nearest_dist && d <= 8 {
-                                                                nearest_dist = d;
-                                                                nearest_idx = Some(i);
-                                                            }
-                                                        }
-                                                    }
-                                                    if let Some(idx) = nearest_idx {
-                                                        let (mx, my) =
-                                                            (monsters[idx].x, monsters[idx].y);
-                                                        monsters[idx].take_damage(meteor_dmg);
+
+                                                        monsters[idx].take_damage(final_dmg);
                                                         log.push(format!(
                                                             "METEOR strikes {} for {} damage!",
-                                                            monsters[idx].name, meteor_dmg
+                                                            monsters[idx].name, final_dmg
                                                         ));
                                                         for sm in monsters.iter_mut() {
                                                             if sm.is_alive() {
@@ -2566,7 +2440,17 @@ fn main() -> std::io::Result<()> {
                                                     );
                                                 } else {
                                                     for (i, &mi) in hit_indices.iter().enumerate() {
-                                                        let dmg = damages[i.min(2)];
+                                                        let mut dmg = damages[i.min(2)];
+
+                                                        // AMPLIFIED LIGHTNING: stunned + lightning
+                                                        if monsters[mi].stun_ticks > 0 {
+                                                            dmg *= 2;
+                                                            log.push(format!(
+                                                                "AMPLIFIED LIGHTNING! {} conducts more power!",
+                                                                monsters[mi].name
+                                                            ));
+                                                        }
+
                                                         monsters[mi].take_damage(dmg);
                                                         log.push(format!(
                                                             "Lightning strikes {} for {} damage!",
@@ -2640,8 +2524,19 @@ fn main() -> std::io::Result<()> {
                                                 let py = player.y as i32;
                                                 let target_x = (px + ability_dx) as usize;
                                                 let target_y = (py + ability_dy) as usize;
-                                                let backstab_dmg =
+                                                let mut backstab_dmg =
                                                     4 + player.effective_stats().potion_bonus();
+
+                                                // SHADOW ASSASSINATION: ShadowStep + Backstab
+                                                if player.has_damage_buff() {
+                                                    backstab_dmg =
+                                                        (backstab_dmg as f32 * 1.5) as i32;
+                                                    player.consume_damage_buff();
+                                                    log.push(format!(
+                                                        "SHADOW ASSASSINATION! A lethal strike from the darkness!"
+                                                    ));
+                                                }
+
                                                 for m in monsters.iter_mut() {
                                                     if m.is_alive()
                                                         && m.x == target_x
@@ -2721,16 +2616,31 @@ fn main() -> std::io::Result<()> {
                                                         && m.x == target_x
                                                         && m.y == target_y
                                                     {
-                                                        let hp_percent =
+                                                        let mut hp_percent =
                                                             m.hp as f32 / m.max_hp as f32;
-                                                        let execute_bonus = if hp_percent < 0.3 {
-                                                            2.0
-                                                        } else {
-                                                            1.0
-                                                        };
-                                                        let final_dmg = (assassinate_dmg as f32
+                                                        let mut execute_threshold = 0.3;
+                                                        let mut bonus_dmg = 0;
+
+                                                        // TOXIC EXECUTION: poisoned + Assassinate
+                                                        if m.poison_ticks > 0 {
+                                                            execute_threshold = 0.5;
+                                                            bonus_dmg = m.poison_ticks * 2;
+                                                            m.poison_ticks = 0;
+                                                            log.push(format!(
+                                                                "TOXIC EXECUTION! Poison weakens the target!"
+                                                            ));
+                                                        }
+
+                                                        let execute_bonus =
+                                                            if hp_percent < execute_threshold {
+                                                                2.0
+                                                            } else {
+                                                                1.0
+                                                            };
+                                                        let final_dmg = ((assassinate_dmg as f32
                                                             * execute_bonus)
-                                                            as i32;
+                                                            as i32)
+                                                            + bonus_dmg;
                                                         m.take_damage(final_dmg);
                                                         log.push(format!(
                                                             "ASSASSINATE! {} takes {} damage!",
@@ -2832,6 +2742,31 @@ fn main() -> std::io::Result<()> {
                                         ));
                                     } else {
                                         let mut damage = player.melee_damage();
+
+                                        // SHATTER synergy: frozen + heavy hit
+                                        if monsters[i].freeze_ticks > 0
+                                            && (player.has_damage_buff()
+                                                || player.ability_3.as_ref().map_or(false, |a| {
+                                                    a.ability_type == AbilityType::ShieldBash
+                                                }))
+                                        {
+                                            damage *= 3;
+                                            monsters[i].freeze_ticks = 0;
+                                            let hp_pct =
+                                                monsters[i].hp as f32 / monsters[i].max_hp as f32;
+                                            if hp_pct < 0.3 {
+                                                monsters[i].hp = 0;
+                                                log.push(format!(
+                                                    "SHATTER! The frozen {} explodes into ice shards!",
+                                                    monsters[i].name
+                                                ));
+                                            } else {
+                                                log.push(format!(
+                                                    "SHATTER! The frozen {} takes 3x damage!",
+                                                    monsters[i].name
+                                                ));
+                                            }
+                                        }
 
                                         // Power Attack / Shadow Strike buff: 2x damage
                                         if player.has_damage_buff() {
