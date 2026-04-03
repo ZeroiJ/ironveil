@@ -52,7 +52,7 @@ pub struct Map {
     pub current_visibility: Vec<Vec<bool>>,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
     pub x1: usize,
     pub y1: usize,
@@ -80,85 +80,30 @@ impl Rect {
 }
 
 impl Map {
-    pub fn new(width: usize, height: usize) -> Self {
+    pub fn new(width: usize, height: usize, floor: i32) -> Self {
+        let mut rng = rand::rng();
+
         let mut tiles = vec![vec![Tile::Wall; height]; width];
         let mut rooms: Vec<Rect> = Vec::new();
 
-        // Scale rooms based on map size
-        let max_rooms = (width * height) / 150;
-        let min_size = 6;
-        let max_size = 15;
-
-        let mut rng = rand::rng();
-
-        for _ in 0..max_rooms {
-            let w = rng.random_range(min_size..max_size);
-            let h = rng.random_range(min_size..max_size);
-            let x = rng.random_range(1..width - w - 1);
-            let y = rng.random_range(1..height - h - 1);
-
-            let new_room = Rect::new(x, y, w, h);
-            let mut ok = true;
-            for other_room in &rooms {
-                if new_room.intersects(other_room) {
-                    ok = false;
-                    break;
-                }
-            }
-
-            if ok {
-                Map::apply_room_to_map(&mut tiles, &new_room);
-
-                if !rooms.is_empty() {
-                    let (new_x, new_y) = new_room.center();
-                    let (prev_x, prev_y) = rooms[rooms.len() - 1].center();
-
-                    if rng.random_bool(0.5) {
-                        Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, prev_y);
-                        Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, new_x);
-                    } else {
-                        Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, prev_x);
-                        Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, new_y);
-                    }
-                }
-
-                rooms.push(new_room);
-            }
-        }
-
-        // Place stairs in the last room
-        if let Some(last_room) = rooms.last() {
-            let (x, y) = last_room.center();
-            tiles[x][y] = Tile::Stairs;
-        }
-
-        let arena_w = rng.random_range(18..24);
-        let arena_h = rng.random_range(12..16);
-        let arena_x = rng.random_range(2..width.saturating_sub(arena_w + 2));
-        let arena_y = rng.random_range(2..height.saturating_sub(arena_h + 2));
-        let boss_room = Rect::new(arena_x, arena_y, arena_w, arena_h);
-
-        Map::apply_room_to_map(&mut tiles, &boss_room);
-
-        if let Some(prev_room) = rooms.last() {
-            let (new_x, new_y) = boss_room.center();
-            let (prev_x, prev_y) = prev_room.center();
-            if rng.random_bool(0.5) {
-                Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, prev_y);
-                Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, new_x);
-            } else {
-                Map::apply_vertical_tunnel(&mut tiles, prev_y, new_y, prev_x);
-                Map::apply_horizontal_tunnel(&mut tiles, prev_x, new_x, new_y);
-            }
-        }
-
-        let (bx, by) = boss_room.center();
-        tiles[bx][by] = Tile::Stairs;
-
-        if !rooms.is_empty() {
-            *rooms.last_mut().unwrap() = boss_room.clone();
+        let gen_type = if floor <= 3 {
+            "bsp"
+        } else if floor <= 6 {
+            "cave"
         } else {
-            rooms.push(boss_room);
+            "bsp_deep"
+        };
+
+        match gen_type {
+            "cave" => {
+                rooms = Map::generate_cave(&mut tiles, width, height, &mut rng);
+            }
+            "bsp_deep" => {
+                rooms = Map::generate_bsp(&mut tiles, width, height, 6, &mut rng);
+            }
+            _ => {
+                rooms = Map::generate_bsp(&mut tiles, width, height, 4, &mut rng);
+            }
         }
 
         let room_types = vec![RoomType::Normal; rooms.len()];
@@ -174,6 +119,278 @@ impl Map {
             shrine_used: HashSet::new(),
             visibility: vec![vec![false; height]; width],
             current_visibility: vec![vec![false; height]; width],
+        }
+    }
+
+    fn generate_bsp(
+        tiles: &mut Vec<Vec<Tile>>,
+        width: usize,
+        height: usize,
+        split_depth: i32,
+        rng: &mut impl RngExt,
+    ) -> Vec<Rect> {
+        let mut rooms = Vec::new();
+        let padding = 2;
+        let mut rects = vec![Rect::new(
+            padding,
+            padding,
+            width - padding * 2,
+            height - padding * 2,
+        )];
+
+        for _ in 0..split_depth {
+            let new_rects: Vec<Rect> = rects
+                .iter()
+                .flat_map(|r| {
+                    let rw = r.x2.saturating_sub(r.x1);
+                    let rh = r.y2.saturating_sub(r.y1);
+                    if rw < 10 || rh < 10 {
+                        return vec![*r];
+                    }
+                    let split_horizontal = if rw > rh * 2 {
+                        false
+                    } else if rh > rw * 2 {
+                        true
+                    } else {
+                        rng.random_bool(0.5)
+                    };
+
+                    if split_horizontal {
+                        let split = rng.random_range(r.y1 + 5..r.y2.saturating_sub(5));
+                        if split <= r.y1 + 3 || split >= r.y2 - 3 {
+                            return vec![*r];
+                        }
+                        vec![
+                            Rect::new(r.x1, r.y1, r.x2, split),
+                            Rect::new(r.x1, split, r.x2, r.y2),
+                        ]
+                    } else {
+                        let split = rng.random_range(r.x1 + 5..r.x2.saturating_sub(5));
+                        if split <= r.x1 + 3 || split >= r.x2 - 3 {
+                            return vec![*r];
+                        }
+                        vec![
+                            Rect::new(r.x1, r.y1, split, r.y2),
+                            Rect::new(split, r.y1, r.x2, r.y2),
+                        ]
+                    }
+                })
+                .collect();
+            rects = new_rects;
+        }
+
+        let min_room_w = 5;
+        let min_room_h = 4;
+        let max_room_w = 14;
+        let max_room_h = 12;
+
+        for rect in &rects {
+            let rw = rect.x2.saturating_sub(rect.x1);
+            let rh = rect.y2.saturating_sub(rect.y1);
+            if rw < min_room_w + 2 || rh < min_room_h + 2 {
+                continue;
+            }
+
+            let room_w = rng.random_range(min_room_w..=(max_room_w.min(rw - 2)));
+            let room_h = rng.random_range(min_room_h..=(max_room_h.min(rh - 2)));
+            let room_x = rng.random_range(rect.x1 + 1..=(rect.x2.saturating_sub(room_w + 1)));
+            let room_y = rng.random_range(rect.y1 + 1..=(rect.y2.saturating_sub(room_h + 1)));
+
+            let room = Rect::new(room_x, room_y, room_w, room_h);
+            Map::apply_room_to_map(tiles, &room);
+            rooms.push(room);
+        }
+
+        if rooms.len() > 1 {
+            for i in 0..rooms.len() - 1 {
+                let (x1, y1) = rooms[i].center();
+                let (x2, y2) = rooms[i + 1].center();
+                Map::connect_rooms(tiles, x1, y1, x2, y2, rng);
+            }
+        }
+
+        rooms
+    }
+
+    fn generate_cave(
+        tiles: &mut Vec<Vec<Tile>>,
+        width: usize,
+        height: usize,
+        rng: &mut impl RngExt,
+    ) -> Vec<Rect> {
+        let mut rooms = Vec::new();
+
+        for x in 0..width {
+            for y in 0..height {
+                if x == 0 || y == 0 || x == width - 1 || y == height - 1 {
+                    tiles[x][y] = Tile::Wall;
+                } else if rng.random_bool(0.45) {
+                    tiles[x][y] = Tile::Wall;
+                } else {
+                    tiles[x][y] = Tile::Floor;
+                }
+            }
+        }
+
+        for _ in 0..5 {
+            let mut new_tiles = tiles.clone();
+            for x in 1..width - 1 {
+                for y in 1..height - 1 {
+                    let mut wall_count = 0;
+                    for dx in -1..=1 {
+                        for dy in -1..=1 {
+                            if tiles[(x as i32 + dx) as usize][(y as i32 + dy) as usize]
+                                == Tile::Wall
+                            {
+                                wall_count += 1;
+                            }
+                        }
+                    }
+                    if wall_count >= 5 {
+                        new_tiles[x][y] = Tile::Wall;
+                    } else {
+                        new_tiles[x][y] = Tile::Floor;
+                    }
+                }
+            }
+            *tiles = new_tiles;
+        }
+
+        let mut visited = vec![vec![false; height]; width];
+        let min_cave_size = 20;
+
+        for x in 1..width - 1 {
+            for y in 1..height - 1 {
+                if tiles[x][y] == Tile::Floor && !visited[x][y] {
+                    let mut cave_tiles = Vec::new();
+                    let mut stack = vec![(x, y)];
+                    visited[x][y] = true;
+
+                    while let Some((cx, cy)) = stack.pop() {
+                        cave_tiles.push((cx, cy));
+                        for &(dx, dy) in &[(0, 1), (0, -1), (1, 0), (-1, 0)] {
+                            let nx = cx as i32 + dx;
+                            let ny = cy as i32 + dy;
+                            if nx > 0
+                                && ny > 0
+                                && (nx as usize) < width - 1
+                                && (ny as usize) < height - 1
+                                && !visited[nx as usize][ny as usize]
+                                && tiles[nx as usize][ny as usize] == Tile::Floor
+                            {
+                                visited[nx as usize][ny as usize] = true;
+                                stack.push((nx as usize, ny as usize));
+                            }
+                        }
+                    }
+
+                    if cave_tiles.len() >= min_cave_size {
+                        let mut min_x = width;
+                        let mut min_y = height;
+                        let mut max_x = 0;
+                        let mut max_y = 0;
+                        for &(cx, cy) in &cave_tiles {
+                            min_x = min_x.min(cx);
+                            min_y = min_y.min(cy);
+                            max_x = max_x.max(cx);
+                            max_y = max_y.max(cy);
+                        }
+                        rooms.push(Rect::new(min_x, min_y, max_x - min_x, max_y - min_y));
+                    } else {
+                        for &(cx, cy) in &cave_tiles {
+                            tiles[cx][cy] = Tile::Wall;
+                        }
+                    }
+                }
+            }
+        }
+
+        if rooms.len() > 1 {
+            for i in 0..rooms.len() - 1 {
+                let (x1, y1) = rooms[i].center();
+                let (x2, y2) = rooms[i + 1].center();
+                Map::connect_rooms(tiles, x1, y1, x2, y2, rng);
+            }
+        }
+
+        rooms
+    }
+
+    fn connect_rooms(
+        tiles: &mut Vec<Vec<Tile>>,
+        x1: usize,
+        y1: usize,
+        x2: usize,
+        y2: usize,
+        rng: &mut impl RngExt,
+    ) {
+        let corridor_width = if rng.random_bool(0.3) { 2 } else { 1 };
+
+        let mut cx = x1 as i32;
+        let mut cy = y1 as i32;
+        let ex = x2 as i32;
+        let ey = y2 as i32;
+
+        let horizontal_first = rng.random_bool(0.5);
+
+        if horizontal_first {
+            while cx != ex {
+                for dy in 0..corridor_width as i32 {
+                    let tx = cx;
+                    let ty = cy + dy;
+                    if tx > 0
+                        && ty > 0
+                        && (tx as usize) < tiles.len()
+                        && (ty as usize) < tiles[0].len()
+                    {
+                        tiles[tx as usize][ty as usize] = Tile::Floor;
+                    }
+                }
+                cx += if cx < ex { 1 } else { -1 };
+            }
+            while cy != ey {
+                for dx in 0..corridor_width as i32 {
+                    let tx = cx + dx;
+                    let ty = cy;
+                    if tx > 0
+                        && ty > 0
+                        && (tx as usize) < tiles.len()
+                        && (ty as usize) < tiles[0].len()
+                    {
+                        tiles[tx as usize][ty as usize] = Tile::Floor;
+                    }
+                }
+                cy += if cy < ey { 1 } else { -1 };
+            }
+        } else {
+            while cy != ey {
+                for dx in 0..corridor_width as i32 {
+                    let tx = cx + dx;
+                    let ty = cy;
+                    if tx > 0
+                        && ty > 0
+                        && (tx as usize) < tiles.len()
+                        && (ty as usize) < tiles[0].len()
+                    {
+                        tiles[tx as usize][ty as usize] = Tile::Floor;
+                    }
+                }
+                cy += if cy < ey { 1 } else { -1 };
+            }
+            while cx != ex {
+                for dy in 0..corridor_width as i32 {
+                    let tx = cx;
+                    let ty = cy + dy;
+                    if tx > 0
+                        && ty > 0
+                        && (tx as usize) < tiles.len()
+                        && (ty as usize) < tiles[0].len()
+                    {
+                        tiles[tx as usize][ty as usize] = Tile::Floor;
+                    }
+                }
+                cx += if cx < ex { 1 } else { -1 };
+            }
         }
     }
 

@@ -1531,7 +1531,7 @@ fn main() -> std::io::Result<()> {
         let (term_width, term_height) = terminal::size()?;
         let map_width = term_width as usize;
         let map_height = (term_height as usize).saturating_sub(7);
-        let mut first_map = Map::new(map_width, map_height);
+        let mut first_map = Map::new(map_width, map_height, 1);
         first_map.assign_room_types(1);
         first_map.generate_decorations();
         let (spawn_x, spawn_y) = first_map.get_starting_position();
@@ -1571,7 +1571,7 @@ fn main() -> std::io::Result<()> {
             let mut map = if let Some(m) = cached_map.take() {
                 m
             } else {
-                let mut m = Map::new(map_width, map_height);
+                let mut m = Map::new(map_width, map_height, current_floor);
                 m.assign_room_types(current_floor);
                 m.generate_decorations();
                 let (sx, sy) = m.get_starting_position();
