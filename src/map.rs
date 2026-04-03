@@ -19,6 +19,7 @@ pub enum RoomType {
     Secret,
     Boss,
     Spawn,
+    Shop,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -233,6 +234,18 @@ impl Map {
                     }
                 };
                 self.room_types[room_idx] = room_type;
+            }
+        }
+
+        if floor > 0 && floor % 3 == 0 && self.rooms.len() > 3 {
+            let candidates: Vec<usize> = (1..self.rooms.len() - 1)
+                .filter(|&i| self.room_types[i] == RoomType::Normal)
+                .collect();
+
+            if !candidates.is_empty() {
+                let mut rng = rand::rng();
+                let room_idx = candidates[rng.random_range(0..candidates.len())];
+                self.room_types[room_idx] = RoomType::Shop;
             }
         }
     }

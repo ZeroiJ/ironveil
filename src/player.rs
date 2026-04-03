@@ -406,6 +406,7 @@ pub struct Player {
     pub xp: i32,
     pub level: i32,
     pub xp_to_next_level: i32,
+    pub gold: i32,
     // Status effects
     pub poison_ticks: i32,
     pub mana_shield_ticks: i32,
@@ -467,6 +468,7 @@ impl Player {
             xp: 0,
             level: 1,
             xp_to_next_level: 50,
+            gold: 0,
             poison_ticks: 0,
             mana_shield_ticks: 0,
             ragefang_stacks: 0,

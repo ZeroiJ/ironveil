@@ -129,6 +129,10 @@ fn render_tile(
             wall_color = Color::Cyan;
             floor_color = Color::DarkCyan;
         }
+        RoomType::Shop => {
+            wall_color = Color::DarkYellow;
+            floor_color = Color::Yellow;
+        }
         RoomType::Secret => {
             wall_char = '?';
             floor_char = '*';
@@ -226,6 +230,32 @@ fn render_monsters(
                 cursor::MoveTo(monster.x as u16, monster.y as u16),
                 SetForegroundColor(color),
                 Print(monster.symbol)
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn render_merchant_npc(
+    stdout: &mut std::io::Stdout,
+    map: &Map,
+    current_floor: i32,
+) -> std::io::Result<()> {
+    if current_floor <= 0 || current_floor % 3 != 0 {
+        return Ok(());
+    }
+    for (i, room) in map.rooms.iter().enumerate() {
+        if map.room_types[i] != map::RoomType::Shop {
+            continue;
+        }
+        let cx = (room.x1 + room.x2) / 2;
+        let cy = (room.y1 + room.y2) / 2;
+        if cx < map.width && cy < map.height && map.current_visibility[cx][cy] {
+            execute!(
+                stdout,
+                cursor::MoveTo(cx as u16, cy as u16),
+                SetForegroundColor(Color::Yellow),
+                Print("$"),
             )?;
         }
     }
@@ -1330,7 +1360,8 @@ fn render_ui(
         "░".repeat(xp_bar_len.saturating_sub(filled))
     );
     let stat_line = format!(
-        "XP {}/{} │ {} │ STR:{} DEX:{} INT:{} CON:{} │ Def:{}",
+        "Gold:{} │ XP {}/{} │ {} │ STR:{} DEX:{} INT:{} CON:{} │ Def:{}",
+        player.gold,
         player.xp,
         player.xp_to_next_level,
         xp_bar,
@@ -1628,6 +1659,7 @@ fn main() -> std::io::Result<()> {
                 render_deco_objects(&mut stdout, &map, true)?;
                 render_ground_items(&mut stdout, &map, &ground_items)?;
                 render_monsters(&mut stdout, &map, &monsters)?;
+                render_merchant_npc(&mut stdout, &map, current_floor)?;
                 render_projectiles(&mut stdout, &projectiles)?;
                 render_minimap(
                     &mut stdout,
@@ -1730,9 +1762,7 @@ fn main() -> std::io::Result<()> {
                                     }
                                 }
                                 KeyCode::Tab => {
-                                    // Open inventory — PAUSES monster tick
                                     ui::inventory_screen(&mut player)?;
-                                    // Redraw everything after closing inventory
                                     execute!(stdout, Clear(ClearType::All))?;
                                     render_map(&mut stdout, &map, current_floor)?;
                                     render_minimap(
@@ -1743,9 +1773,27 @@ fn main() -> std::io::Result<()> {
                                         term_width,
                                         map_height,
                                     )?;
-                                    // Reset monster tick so they don't all act immediately
                                     last_monster_tick = Instant::now();
                                     continue 'inner;
+                                }
+                                KeyCode::Char('e') | KeyCode::Char('E') => {
+                                    if map.get_room_type_at(player.x, player.y)
+                                        == map::RoomType::Shop
+                                    {
+                                        ui::shop_screen(&mut player)?;
+                                        execute!(stdout, Clear(ClearType::All))?;
+                                        render_map(&mut stdout, &map, current_floor)?;
+                                        render_minimap(
+                                            &mut stdout,
+                                            &map,
+                                            player.x,
+                                            player.y,
+                                            term_width,
+                                            map_height,
+                                        )?;
+                                        last_monster_tick = Instant::now();
+                                        continue 'inner;
+                                    }
                                 }
                                 KeyCode::Char('1') => {
                                     if let Some(ref mut a) = player.ability_1 {
@@ -2828,6 +2876,12 @@ fn main() -> std::io::Result<()> {
                                             log.push(format!("+{} XP", xp));
                                             for msg in level_msgs {
                                                 log.push(msg);
+                                            }
+
+                                            let gold = monsters[i].gold_value;
+                                            if gold > 0 {
+                                                player.gold += gold;
+                                                log.push(format!("+{} Gold", gold));
                                             }
 
                                             // Random artifact drop (3% chance, floor 6+)

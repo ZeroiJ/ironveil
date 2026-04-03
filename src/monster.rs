@@ -124,8 +124,9 @@ pub struct Monster {
     pub summon_max: i32,                   // Necromancer: max resurrections
     pub is_phasing: bool,                  // Wraith: currently inside a wall
     pub death_pos: Option<(usize, usize)>, // where this monster died (for resurrection)
-    pub is_boss: bool,                     // Boss monster flag
-    pub boss_tick: i32,                    // Boss ability timer
+    pub is_boss: bool,
+    pub boss_tick: i32,
+    pub gold_value: i32,
 }
 
 impl Monster {
@@ -167,6 +168,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Skeleton => Self {
                 x,
@@ -196,6 +204,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Troll => Self {
                 x,
@@ -225,6 +240,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::BatSwarm => Self {
                 x,
@@ -254,6 +276,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Spider => Self {
                 x,
@@ -283,6 +312,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Wraith => Self {
                 x,
@@ -312,6 +348,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Necromancer => Self {
                 x,
@@ -341,6 +384,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::GoblinKing => Self {
                 x,
@@ -370,6 +420,7 @@ impl Monster {
                 death_pos: None,
                 is_boss: true,
                 boss_tick: 0,
+                gold_value: 50,
             },
             MonsterType::BoneDragon => Self {
                 x,
@@ -399,6 +450,7 @@ impl Monster {
                 death_pos: None,
                 is_boss: true,
                 boss_tick: 0,
+                gold_value: 75,
             },
             MonsterType::ShadowLord => Self {
                 x,
@@ -428,6 +480,7 @@ impl Monster {
                 death_pos: None,
                 is_boss: true,
                 boss_tick: 0,
+                gold_value: 100,
             },
             // Undead
             MonsterType::Zombie => Self {
@@ -458,6 +511,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Ghoul => Self {
                 x,
@@ -487,6 +547,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Specter => Self {
                 x,
@@ -516,6 +583,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             // Demons
             MonsterType::Imp => Self {
@@ -546,6 +620,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Demon => Self {
                 x,
@@ -575,6 +656,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Hellfire => Self {
                 x,
@@ -604,6 +692,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             // Beasts
             MonsterType::Minotaur => Self {
@@ -634,6 +729,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Bear => Self {
                 x,
@@ -663,6 +765,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::WolfPack => Self {
                 x,
@@ -692,6 +801,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             // Humanoids
             MonsterType::Orc => Self {
@@ -722,6 +838,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Bandit => Self {
                 x,
@@ -751,6 +874,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Assassin => Self {
                 x,
@@ -780,6 +910,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             // Elementals
             MonsterType::FireElemental => Self {
@@ -810,6 +947,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::EarthElemental => Self {
                 x,
@@ -839,6 +983,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::IceElemental => Self {
                 x,
@@ -868,6 +1019,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             // Constructs
             MonsterType::Golem => Self {
@@ -898,6 +1056,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Sentry => Self {
                 x,
@@ -927,6 +1092,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
             MonsterType::Bomber => Self {
                 x,
@@ -956,6 +1128,13 @@ impl Monster {
                 death_pos: None,
                 is_boss: false,
                 boss_tick: 0,
+                gold_value: if floor_tier >= 3 {
+                    15
+                } else if floor_tier >= 2 {
+                    10
+                } else {
+                    5
+                },
             },
         }
     }

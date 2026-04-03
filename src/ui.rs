@@ -649,3 +649,178 @@ pub fn inventory_screen(player: &mut Player) -> std::io::Result<bool> {
         }
     }
 }
+
+pub fn shop_screen(player: &mut Player) -> std::io::Result<bool> {
+    let mut stdout = stdout();
+    let mut changed = false;
+    let shop_items = crate::items::generate_shop_inventory(player.level);
+
+    loop {
+        let (term_w, term_h) = terminal::size()?;
+        let tw = term_w as usize;
+        let th = term_h as usize;
+
+        execute!(stdout, Clear(ClearType::All))?;
+
+        let box_w = 56usize;
+        let safe_box_w = box_w.min(tw.saturating_sub(4));
+        let box_x = (tw.saturating_sub(safe_box_w) / 2) as u16;
+        let box_y = (th.saturating_sub(30) / 2) as u16;
+
+        let draw = |stdout: &mut std::io::Stdout,
+                    row: u16,
+                    text: &str,
+                    color: Color|
+         -> std::io::Result<()> {
+            execute!(
+                stdout,
+                cursor::MoveTo(box_x, box_y + row),
+                SetForegroundColor(color),
+                Print(text)
+            )
+        };
+
+        let top_border = format!("╔{}╗", "═".repeat(safe_box_w - 2));
+        let mid_border = format!("╠{}╣", "═".repeat(safe_box_w - 2));
+        let empty_line = format!("║{}║", " ".repeat(safe_box_w - 2));
+        let bottom_border = format!("╚{}╝", "═".repeat(safe_box_w - 2));
+
+        let mut row = 0u16;
+        draw(&mut stdout, row, &top_border, Color::DarkGrey)?;
+        row += 1;
+        draw(
+            &mut stdout,
+            row,
+            &format!("║{:^width$}║", " MERCHANT'S SHOP ", width = box_w - 2),
+            Color::White,
+        )?;
+        row += 1;
+        draw(&mut stdout, row, &mid_border, Color::DarkGrey)?;
+        row += 1;
+        draw(
+            &mut stdout,
+            row,
+            &format!(
+                "║  Your Gold: {}g {:<width$}║",
+                player.gold,
+                "",
+                width = box_w - 16
+            ),
+            Color::Yellow,
+        )?;
+        row += 1;
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+
+        draw(
+            &mut stdout,
+            row,
+            &format!("║  {:<width$}║", "Items for Sale:", width = box_w - 4),
+            Color::DarkYellow,
+        )?;
+        row += 1;
+
+        for (i, (item, price)) in shop_items.iter().enumerate() {
+            let letter = (b'a' + i as u8) as char;
+            let item_color = item.rarity.color();
+            let short_name = if item.display_name().len() > 22 {
+                format!("{}..", &item.display_name()[..20])
+            } else {
+                item.display_name()
+            };
+            let can_buy = player.gold >= *price as i32
+                && player.inventory.len() < crate::player::INVENTORY_CAPACITY;
+            let status = if can_buy {
+                format!("[{}] Buy", letter)
+            } else {
+                format!("[{}] --", letter)
+            };
+            let line = format!("║    {:<22} {:>5}g  {:>8}║", short_name, price, status);
+            draw(&mut stdout, row, &line, item_color)?;
+            row += 1;
+        }
+
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+        draw(
+            &mut stdout,
+            row,
+            &format!("║  {:<width$}║", "Sell Your Items:", width = box_w - 4),
+            Color::DarkYellow,
+        )?;
+        row += 1;
+
+        if player.inventory.is_empty() {
+            draw(
+                &mut stdout,
+                row,
+                &format!("║    {:<width$}║", "(nothing to sell)", width = box_w - 6),
+                Color::DarkGrey,
+            )?;
+            row += 1;
+        } else {
+            for (i, item) in player.inventory.iter().enumerate().take(5) {
+                let letter = (b'A' + i as u8) as char;
+                let sell_price = crate::items::get_sell_price(item);
+                let short_name = if item.display_name().len() > 22 {
+                    format!("{}..", &item.display_name()[..20])
+                } else {
+                    item.display_name()
+                };
+                let line = format!(
+                    "║    {:<22} {:>5}g  [{:>1}] Sell║",
+                    short_name, sell_price, letter
+                );
+                draw(&mut stdout, row, &line, item.rarity.color())?;
+                row += 1;
+            }
+        }
+
+        draw(&mut stdout, row, &empty_line, Color::DarkGrey)?;
+        row += 1;
+        draw(&mut stdout, row, &mid_border, Color::DarkGrey)?;
+        row += 1;
+
+        let footer = format!(
+            "║{:^width$}║",
+            "[a-j] Buy  |  [A-E] Sell  |  Esc Leave",
+            width = box_w - 2
+        );
+        draw(&mut stdout, row, &footer, Color::Grey)?;
+        row += 1;
+        draw(&mut stdout, row, &bottom_border, Color::DarkGrey)?;
+
+        stdout.flush()?;
+
+        if let Event::Key(key_event) = event::read()? {
+            match key_event.code {
+                KeyCode::Tab | KeyCode::Esc => {
+                    return Ok(changed);
+                }
+                KeyCode::Char(c) if c >= 'a' && c <= 'j' => {
+                    let index = (c as u8 - b'a') as usize;
+                    if index < shop_items.len() {
+                        let (item, price) = &shop_items[index];
+                        if player.inventory.len() < crate::player::INVENTORY_CAPACITY {
+                            if player.gold >= *price as i32 {
+                                player.gold -= *price as i32;
+                                player.inventory.push(item.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+                KeyCode::Char(c) if c >= 'A' && c <= 'E' => {
+                    let index = (c as u8 - b'A') as usize;
+                    if index < player.inventory.len() {
+                        let sell_price = crate::items::get_sell_price(&player.inventory[index]);
+                        player.gold += sell_price;
+                        player.inventory.remove(index);
+                        changed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}

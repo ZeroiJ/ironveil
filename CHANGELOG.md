@@ -1,5 +1,64 @@
 # Ironveil Development Changelog
 
+## v0.5.0 — Shop System & Gold Economy
+*2026-04-03*
+
+### Gold Currency System
+- Added `gold: i32` field to Player struct (starts at 0)
+- Monsters drop gold on death: Tier 1 (5g), Tier 2 (10g), Tier 3 (15g)
+- Boss drops: Goblin King (50g), Bone Dragon (75g), Shadow Lord (100g)
+- Gold shown in HUD: `Gold:45 | XP 42/120 | ...`
+
+### Shop/Merchant NPC
+- Shop rooms appear every 3 floors (3, 6, 9, 12...)
+- Merchant NPC rendered as `$` in bright yellow
+- Shop room visual theme: Yellow walls and floors
+- Press `E` while in shop room to open merchant interface
+
+### Shop UI
+- Buy section: 10 items displayed with prices, `[a-j]` to buy
+- Sell section: Player inventory items with sell prices, `[A-E]` to sell
+- Items priced based on stats and rarity
+- Cannot buy if insufficient gold or inventory full
+- Esc/Tab to leave shop
+
+### Shop Inventory Generation
+- Items scale with player level
+- Mix of potions (3-4), weapons (2), armor (2), rings (1)
+- Sell prices: 30-50% of item value
+
+### Documentation
+- Created SHOP_PLAN.md — detailed shop system design
+- Updated IMPROVEMENTS.md — marked shop as completed
+- Updated CLASSES.md — documented all 5 abilities per class
+- Updated CONTROLS.md — added keys 3-5, E for shop
+- Updated skill-design.md — added implementation status
+
+---
+
+## v0.4.3 — Expanded Ability System
+*2026-04-02*
+
+### 5 Abilities Per Class
+- Expanded from 2 to 5 abilities per class (4 active + 1 ultimate)
+- Level-based unlock: Lv1 (ability 1), Lv5 (ability 2), Lv10 (ability 3), Lv15 (ability 4), Lv20 (ability 5)
+- New abilities: Shield Bash, Backstab, Arcane Missiles, Battle Cry, Fan of Knives, Mana Shield, Earthquake, Assassinate, Meteor
+- Input handling for keys 3, 4, 5
+- HUD displays all 5 ability slots with cooldowns and lock status
+
+### New Ability Mechanics
+- **Shield Bash**: Stuns nearest enemy within 2 tiles for 2 turns
+- **Backstab**: Directional attack dealing 4 + INT damage
+- **Arcane Missiles**: Fires 3 homing missiles at up to 3 nearest enemies
+- **Battle Cry**: Reduces attack of all enemies within 4 tiles by 2
+- **Fan of Knives**: AoE damage to all enemies within 4 tiles
+- **Mana Shield**: Absorbs next incoming damage hit
+- **Earthquake**: Massive AoE (range 5) with 8 + INT damage + stun
+- **Assassinate**: Directional execute, 2x damage if target <30% HP
+- **Meteor**: Single target 10 + INT with splash damage (radius 2)
+
+---
+
 ## v0.4.2 — Special Rooms & Procedural Generation
 *2026-04-02*
 

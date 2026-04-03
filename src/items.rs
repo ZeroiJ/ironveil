@@ -831,3 +831,59 @@ pub fn mage_starting_ring() -> Item {
         artifact_effect: ArtifactEffect::None,
     }
 }
+
+pub fn generate_shop_inventory(player_level: i32) -> Vec<(Item, i32)> {
+    let mut rng = rand::rng();
+    let mut shop_items: Vec<(Item, i32)> = Vec::new();
+
+    let potion_count = 3 + (player_level / 5).min(1);
+    let weapon_count = 2;
+    let armor_count = 2;
+    let ring_count = 1;
+    let total = potion_count + weapon_count + armor_count + ring_count;
+
+    for _ in 0..potion_count {
+        let mut item = random_potion();
+        let heal = if player_level >= 7 { 15 } else { 7 };
+        item.heal_amount = heal;
+        let price = heal * 2 + rng.random_range(0..5);
+        shop_items.push((item, price));
+    }
+
+    for _ in 0..weapon_count {
+        let item = random_weapon(player_level);
+        let price = (item.damage_bonus * 8 + rng.random_range(5..15)).max(10);
+        shop_items.push((item, price));
+    }
+
+    for _ in 0..armor_count {
+        let item = random_armor(player_level);
+        let price = (item.defense_bonus * 10 + rng.random_range(5..15)).max(10);
+        shop_items.push((item, price));
+    }
+
+    for _ in 0..ring_count {
+        let item = random_ring(player_level);
+        let price = (item.stat_bonus_value * 12 + rng.random_range(5..20)).max(15);
+        shop_items.push((item, price));
+    }
+
+    while shop_items.len() < 10 {
+        let item = random_potion();
+        shop_items.push((item, 15));
+    }
+
+    shop_items.truncate(10);
+    shop_items
+}
+
+pub fn get_sell_price(item: &Item) -> i32 {
+    let base = if item.item_type == ItemType::Potion {
+        item.heal_amount
+    } else {
+        item.damage_bonus
+            .max(item.defense_bonus)
+            .max(item.stat_bonus_value)
+    };
+    (base * 3).max(1)
+}
