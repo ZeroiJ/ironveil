@@ -1,3 +1,4 @@
+use crate::affixes::ExoticType;
 use crate::items::{ArtifactEffect, Item, ItemType};
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
@@ -428,6 +429,21 @@ pub struct Player {
     pub bonus_str: i32,
     pub bonus_dodge: i32,
     pub warding_buff: bool,
+    // Affix bonuses (from equipped items)
+    pub lifesteal: i32,
+    pub cooldown_reduction: i32,
+    pub freeze_chance: i32,
+    pub burn_chance: i32,
+    pub hp_bonus: i32,
+    // Exotic state tracking
+    pub exotic_equipped: Option<ExoticType>,
+    pub consecutive_hits: i32,
+    pub world_eater_hit_count: i32,
+    pub phoenix_revived: bool,
+    pub aegis_blocked: bool,
+    pub shroud_invisible_ticks: i32,
+    pub ouroboros_hp_drain: bool,
+    pub gambler_last_roll: Option<f32>,
 }
 
 pub const INVENTORY_CAPACITY: usize = 10;
@@ -486,6 +502,19 @@ impl Player {
             bonus_str: 0,
             bonus_dodge: 0,
             warding_buff: false,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
+            exotic_equipped: None,
+            consecutive_hits: 0,
+            world_eater_hit_count: 0,
+            phoenix_revived: false,
+            aegis_blocked: false,
+            shroud_invisible_ticks: 0,
+            ouroboros_hp_drain: false,
+            gambler_last_roll: None,
         }
     }
 
@@ -526,6 +555,46 @@ impl Player {
             con: self.base_stats.con + rc,
             crit_chance: self.base_stats.crit_chance,
             crit_multiplier: self.base_stats.crit_multiplier,
+        }
+    }
+
+    pub fn recalc_affix_bonuses(&mut self) {
+        self.lifesteal = 0;
+        self.cooldown_reduction = 0;
+        self.freeze_chance = 0;
+        self.burn_chance = 0;
+        self.hp_bonus = 0;
+        self.exotic_equipped = None;
+
+        if let Some(ref item) = self.equipment.weapon {
+            self.lifesteal += item.lifesteal;
+            self.cooldown_reduction += item.cooldown_reduction;
+            self.freeze_chance += item.freeze_chance;
+            self.burn_chance += item.burn_chance;
+            self.hp_bonus += item.hp_bonus;
+            if item.exotic_type.is_some() {
+                self.exotic_equipped = item.exotic_type.clone();
+            }
+        }
+        if let Some(ref item) = self.equipment.armor {
+            self.lifesteal += item.lifesteal;
+            self.cooldown_reduction += item.cooldown_reduction;
+            self.freeze_chance += item.freeze_chance;
+            self.burn_chance += item.burn_chance;
+            self.hp_bonus += item.hp_bonus;
+            if item.exotic_type.is_some() {
+                self.exotic_equipped = item.exotic_type.clone();
+            }
+        }
+        if let Some(ref item) = self.equipment.ring {
+            self.lifesteal += item.lifesteal;
+            self.cooldown_reduction += item.cooldown_reduction;
+            self.freeze_chance += item.freeze_chance;
+            self.burn_chance += item.burn_chance;
+            self.hp_bonus += item.hp_bonus;
+            if item.exotic_type.is_some() {
+                self.exotic_equipped = item.exotic_type.clone();
+            }
         }
     }
 
@@ -633,6 +702,7 @@ impl Player {
 
         // Recalculate max HP when ring changes CON
         self.recalculate_max_hp();
+        self.recalc_affix_bonuses();
     }
 
     /// Use a potion from inventory at the given index. Returns the heal amount, or None.

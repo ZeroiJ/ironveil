@@ -1,5 +1,46 @@
 # Ironveil Development Changelog
 
+## v0.6.0 — Affixes, Exotics & Loot Overhaul
+*2026-04-03*
+
+### Affix System (Prefix/Suffix)
+- Added 12 prefixes: Sharp, Vicious, Brutal, Sturdy, Fortified, Iron, Swift, Mighty, Arcane, Vital, Vampiric, Hasty
+- Added 10 suffixes: of Health, of Warding, of the Bear/Fox/Owl/Ox, of Haste, of Frost, of Flame, of the Leech
+- Affixes roll based on item rarity and floor depth
+- Common: 0 affixes | Uncommon: 0-1 | Rare: 1-2 | Epic/Legendary: 2 (prefix + suffix)
+- Legendary items get +50% stat ranges on affixes
+- Affix effects: +damage, +defense, +stats, lifesteal, cooldown reduction, freeze/burn chance, +HP
+
+### Exotic Items (27 Unique Items)
+- New `Rarity::Exotic` tier — items render in Red on the ground
+- 0.1% drop from normal monsters (floor 6+), 5% from bosses
+- Only 1 exotic can be equipped at a time
+- Exotics cannot be sold at shops
+
+**Exotic Weapons (8):** Bloodthirst, Soul Reaper, The World-Eater, Whisper of the Void, Crimson Dancer, Godsbane, The Peacemaker, Last Breath
+
+**Exotic Armor (10):** Phoenix Down, Frostbite Gauntlets, Stormcaller's Mantle, Shadow-weave Boots, The Iron Maiden, Skin of the Hydra, Aegis of the Fallen, The Coward's Cloak, Berserker's Plate, Shroud of the Nameless
+
+**Exotic Rings (9):** The Glass Cannon, Time Weaver's Ring, Ring of the Gambler, The Martyr's Band, Ouroboros, The Hoarder's Signet, Ring of Echoes, The Pacifist's Oath, Fate's Thread
+
+### Combat Effects from Affixes
+- Lifesteal: heals HP on monster kill
+- Freeze chance: freezes enemies on melee hit
+- Burn chance: applies poison ticks on melee hit
+- Cooldown reduction: reduces ability cooldowns
+
+### Codebase Refactoring
+- Split `items.rs` (2300 lines) into two modules:
+  - `src/affixes.rs` (1107 lines) — Prefix, Suffix, ExoticType enums + affix/exotic generation
+  - `src/items.rs` (1202 lines) — Rarity, Item struct, base item generation, shop logic
+- Clean import structure: `use crate::affixes::*` and `use crate::items::*`
+
+### Documentation
+- Updated ITEMS.md — full affix tables and all 27 exotic items documented
+- Updated AFFIXES_PLAN.md — detailed implementation plan
+
+---
+
 ## v0.5.0 — Shop System & Gold Economy
 *2026-04-03*
 

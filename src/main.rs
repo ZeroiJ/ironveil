@@ -1,3 +1,4 @@
+mod affixes;
 mod items;
 mod map;
 mod monster;
@@ -13,6 +14,7 @@ use crossterm::{
     style::{Color, Print, SetForegroundColor},
     terminal::{self, Clear, ClearType},
 };
+use affixes::{apply_affixes, generate_exotic, ExoticType, Prefix, Suffix};
 use items::{Item, ItemType};
 use map::{DecoObject, Map, RoomType, Tile};
 use monster::{Monster, MonsterAction};
@@ -286,7 +288,9 @@ fn render_ground_items(
         if !map.current_visibility[x][y] {
             continue;
         }
-        let color = if item.is_artifact {
+        let color = if item.exotic_type.is_some() {
+            Color::Red
+        } else if item.is_artifact {
             Color::Yellow
         } else {
             match item.item_type {
@@ -2853,6 +2857,30 @@ fn main() -> std::io::Result<()> {
                                             ));
                                         }
 
+                                        // Affix: freeze chance
+                                        if player.freeze_chance > 0 {
+                                            let mut rng = rand::rng();
+                                            if rng.random_range(0..100) < player.freeze_chance {
+                                                monsters[i].freeze_ticks = 2;
+                                                log.push(format!(
+                                                    "The {} is frozen!",
+                                                    monsters[i].name
+                                                ));
+                                            }
+                                        }
+
+                                        // Affix: burn chance
+                                        if player.burn_chance > 0 {
+                                            let mut rng = rand::rng();
+                                            if rng.random_range(0..100) < player.burn_chance {
+                                                monsters[i].poison_ticks = 3;
+                                                log.push(format!(
+                                                    "The {} is burning!",
+                                                    monsters[i].name
+                                                ));
+                                            }
+                                        }
+
                                         if !monsters[i].is_alive() {
                                             player.monsters_slain += 1;
                                             log.push(format!(
@@ -2882,6 +2910,12 @@ fn main() -> std::io::Result<()> {
                                             if gold > 0 {
                                                 player.gold += gold;
                                                 log.push(format!("+{} Gold", gold));
+                                            }
+
+                                            if player.lifesteal > 0 {
+                                                let heal = player.lifesteal;
+                                                player.hp = (player.hp + heal).min(player.max_hp);
+                                                log.push(format!("Lifesteal heals {} HP!", heal));
                                             }
 
                                             // Random artifact drop (3% chance, floor 6+)

@@ -90,3 +90,100 @@
 - `a-j` to use/equip items
 - `A-J` to drop items
 - Equipping swaps old gear back to inventory
+
+---
+
+## Affix System
+
+Items can roll prefixes and suffixes based on rarity and floor depth.
+
+### Rarity & Affix Count
+
+| Rarity | Affixes | Example |
+|--------|---------|---------|
+| Common | 0 | `Dagger` |
+| Uncommon | 0-1 (50%) | `Sharp Dagger` |
+| Rare | 1-2 | `Sharp Dagger of Health` |
+| Epic | 2 (prefix + suffix) | `Vampiric Longsword of the Leech` |
+| Legendary | 2 (+50% stat ranges) | `Brutal Greataxe of Flame` |
+| Exotic | Fixed unique effects | `* The Glass Cannon *` |
+
+### Prefixes
+
+| Prefix | Type | Effect | Min Floor |
+|--------|------|--------|-----------|
+| Sharp | Weapon | +damage | 1 |
+| Vicious | Weapon | +damage | 4 |
+| Brutal | Weapon | +damage | 8 |
+| Vampiric | Weapon | Lifesteal on kill | 6 |
+| Hasty | Weapon | -1 cooldown | 8 |
+| Sturdy | Armor | +defense | 1 |
+| Fortified | Armor | +defense | 4 |
+| Iron | Armor | +defense | 8 |
+| Swift | Armor/Ring | +DEX, -1 cooldown | 1 |
+| Mighty | Any | +STR | 1 |
+| Arcane | Any | +INT | 1 |
+| Vital | Any | +CON | 1 |
+
+### Suffixes
+
+| Suffix | Type | Effect | Min Floor |
+|--------|------|--------|-----------|
+| of Health | Any | +max HP | 1 |
+| of Warding | Any | +max HP | 6 |
+| of the Bear | Armor/Ring | +STR | 4 |
+| of the Fox | Armor/Ring | +DEX | 4 |
+| of the Owl | Armor/Ring | +INT | 4 |
+| of the Ox | Armor/Ring | +CON | 4 |
+| of Haste | Weapon | -1 cooldown | 10 |
+| of Frost | Weapon | Freeze chance on hit | 8 |
+| of Flame | Weapon | Burn chance on hit | 8 |
+| of the Leech | Weapon | Lifesteal % | 10 |
+
+---
+
+## Exotic Items
+
+Exotics are unique named items with game-changing effects and trade-offs. They drop at 0.1% from normal monsters (floor 6+), 5% from bosses. Only 1 exotic can be equipped at a time. Exotics render in **Red** on the ground.
+
+### Exotic Weapons
+
+| Name | Effect | Trade-off |
+|------|--------|-----------|
+| **Bloodthirst** | +50% damage | -30% max HP |
+| **Soul Reaper** | Kills heal 5 HP | -3 STR |
+| **The World-Eater** | Every 5th hit 3x damage | -20% attack speed |
+| **Whisper of the Void** | Attacks ignore armor | -50% base damage |
+| **Crimson Dancer** | +2 dmg per consecutive hit | Resets on damage taken |
+| **Godsbane** | 10% instant kill on non-bosses | -50% vs bosses |
+| **The Peacemaker** | Monsters don't aggro unless attacked | +100% damage taken |
+| **Last Breath** | Up to 3x damage at 1 HP | -50% damage at full HP |
+
+### Exotic Armor
+
+| Name | Effect | Trade-off |
+|------|--------|-----------|
+| **Phoenix Down** | Revive once/floor at 50% HP | -20% all stats |
+| **Frostbite Gauntlets** | 10% freeze on melee hit | -2 INT |
+| **Stormcaller's Mantle** | Lightning chains +2 targets | -3 CON |
+| **Shadow-weave Boots** | No Shadow Step cooldown | Costs 2 HP per use |
+| **The Iron Maiden** | Reflect 50% incoming damage | -3 DEF, +10% damage taken |
+| **Skin of the Hydra** | Regen 1 HP every 3 ticks | -50% potion effectiveness |
+| **Aegis of the Fallen** | First hit each floor negated | -10 max HP per floor |
+| **The Coward's Cloak** | +30% dodge chance | -50% damage dealt |
+| **Berserker's Plate** | +50% damage below 30% HP | -30% damage above 70% HP |
+| **Shroud of the Nameless** | Invisible 3 ticks after kill | -20% movement speed |
+
+### Exotic Rings
+
+| Name | Effect | Trade-off |
+|------|--------|-----------|
+| **The Glass Cannon** | +10 INT | Max HP set to 1 |
+| **Time Weaver's Ring** | All cooldowns -2 | -5 DEX |
+| **Ring of the Gambler** | 25% chance 4x damage | 25% chance 0 damage |
+| **The Martyr's Band** | Allies take 50% less damage | You take 25% more damage |
+| **Ouroboros** | No ability cooldowns | Drains 2 HP per ability use |
+| **The Hoarder's Signet** | +200% gold drops | -50% XP from kills |
+| **Ring of Echoes** | Abilities hit twice | +50% cooldowns |
+| **The Pacifist's Oath** | +50% XP from kills | Cannot deal critical hits |
+| **Fate's Thread** | Reroll one death per run | -30% gold/XP, -20% all stats |

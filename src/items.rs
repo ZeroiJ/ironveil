@@ -1,15 +1,18 @@
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 
+use crate::affixes::{apply_affixes, generate_exotic, ExoticType, Prefix, Suffix};
+
 // --- Item Rarity ---
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Copy, Serialize, Deserialize)]
 pub enum Rarity {
     Common,
     Uncommon,
     Rare,
     Epic,
     Legendary,
+    Exotic,
 }
 
 impl Rarity {
@@ -20,6 +23,7 @@ impl Rarity {
             Rarity::Rare => crossterm::style::Color::Cyan,
             Rarity::Epic => crossterm::style::Color::Magenta,
             Rarity::Legendary => crossterm::style::Color::Yellow,
+            Rarity::Exotic => crossterm::style::Color::Red,
         }
     }
 
@@ -30,6 +34,7 @@ impl Rarity {
             Rarity::Rare => "RARE",
             Rarity::Epic => "EPIC",
             Rarity::Legendary => "LEGENDARY",
+            Rarity::Exotic => "EXOTIC",
         }
     }
 }
@@ -37,6 +42,7 @@ impl Rarity {
 pub fn roll_rarity(floor: i32) -> Rarity {
     let mut rng = rand::rng();
 
+    let exotic_chance = if floor >= 6 { 0.001 } else { 0.0 };
     let legendary_chance = (0.001 + floor as f32 * 0.0005).min(0.02);
     let epic_chance = (0.01 + floor as f32 * 0.003).min(0.08);
     let rare_chance = (0.05 + floor as f32 * 0.01).min(0.20);
@@ -44,7 +50,9 @@ pub fn roll_rarity(floor: i32) -> Rarity {
 
     let roll: f32 = rng.random_range(0.0..1.0);
 
-    if roll < legendary_chance {
+    if roll < exotic_chance {
+        Rarity::Exotic
+    } else if roll < legendary_chance {
         Rarity::Legendary
     } else if roll < epic_chance {
         Rarity::Epic
@@ -123,24 +131,50 @@ pub struct Item {
     pub rarity: Rarity,
     pub is_artifact: bool,
     pub artifact_effect: ArtifactEffect,
+    pub prefix: Option<Prefix>,
+    pub suffix: Option<Suffix>,
+    pub exotic_type: Option<ExoticType>,
+    pub lifesteal: i32,
+    pub cooldown_reduction: i32,
+    pub freeze_chance: i32,
+    pub burn_chance: i32,
+    pub hp_bonus: i32,
 }
 
 impl Item {
     pub fn display_name(&self) -> String {
+        if self.exotic_type.is_some() {
+            let exotic_name = self.exotic_type.as_ref().unwrap().name();
+            let rarity_suffix = if self.rarity == Rarity::Common {
+                String::new()
+            } else {
+                format!(" [{}]", self.rarity.label())
+            };
+            return format!("* {} *{}", exotic_name, rarity_suffix);
+        }
+
+        let mut display = self.name.clone();
+        if let Some(ref prefix) = self.prefix {
+            display = format!("{} {}", prefix.name(), display);
+        }
+        if let Some(ref suffix) = self.suffix {
+            display = format!("{} {}", display, suffix.name());
+        }
+
         let base = match self.item_type {
-            ItemType::Weapon => format!("{} (+{} dmg)", self.name, self.damage_bonus),
-            ItemType::Armor => format!("{} (+{} def)", self.name, self.defense_bonus),
+            ItemType::Weapon => format!("{} (+{} dmg)", display, self.damage_bonus),
+            ItemType::Armor => format!("{} (+{} def)", display, self.defense_bonus),
             ItemType::Ring => {
                 if !self.stat_bonus_type.is_empty() {
                     format!(
                         "{} (+{} {})",
-                        self.name, self.stat_bonus_value, self.stat_bonus_type
+                        display, self.stat_bonus_value, self.stat_bonus_type
                     )
                 } else {
-                    self.name.clone()
+                    display
                 }
             }
-            ItemType::Potion => format!("{} (heals {})", self.name, self.heal_amount),
+            ItemType::Potion => format!("{} (heals {})", display, self.heal_amount),
         };
         let rarity_suffix = if self.rarity == Rarity::Common {
             String::new()
@@ -155,7 +189,30 @@ impl Item {
     }
 
     pub fn artifact_description(&self) -> &str {
+        if let Some(ref exotic) = self.exotic_type {
+            return exotic.description();
+        }
         self.artifact_effect.description()
+    }
+
+    pub fn affix_description(&self) -> String {
+        let mut parts = Vec::new();
+        if self.lifesteal > 0 {
+            parts.push(format!("Lifesteal {}%", self.lifesteal));
+        }
+        if self.cooldown_reduction > 0 {
+            parts.push(format!("Cooldown -{}", self.cooldown_reduction));
+        }
+        if self.freeze_chance > 0 {
+            parts.push(format!("Freeze {}%", self.freeze_chance));
+        }
+        if self.burn_chance > 0 {
+            parts.push(format!("Burn {}%", self.burn_chance));
+        }
+        if self.hp_bonus > 0 {
+            parts.push(format!("+{} HP", self.hp_bonus));
+        }
+        parts.join(", ")
     }
 }
 
@@ -164,51 +221,51 @@ impl Item {
 /// Generate a random item appropriate for the given floor.
 pub fn random_item(floor: i32) -> Item {
     let rarity = roll_rarity(floor);
+    if rarity == Rarity::Exotic {
+        if let Some(exotic) = generate_exotic(floor) {
+            return exotic;
+        }
+    }
     let mut rng = rand::rng();
     let roll = rng.random_range(0..100);
 
-    if roll < 40 {
-        let mut item = random_potion();
-        item.rarity = rarity;
-        item
+    let mut item = if roll < 40 {
+        random_potion()
     } else if roll < 70 {
-        let mut item = random_weapon(floor);
-        item.rarity = rarity;
-        item
+        random_weapon(floor)
     } else if roll < 90 {
-        let mut item = random_armor(floor);
-        item.rarity = rarity;
-        item
+        random_armor(floor)
     } else {
-        let mut item = random_ring(floor);
-        item.rarity = rarity;
-        item
-    }
+        random_ring(floor)
+    };
+    item.rarity = rarity;
+    apply_affixes(&mut item, &rarity, floor);
+    item
 }
 
 /// Generate a random item weighted for monster drops.
 pub fn random_drop(floor: i32) -> Item {
     let rarity = roll_rarity(floor);
+    if rarity == Rarity::Exotic {
+        if let Some(exotic) = generate_exotic(floor) {
+            return exotic;
+        }
+    }
     let mut rng = rand::rng();
     let roll = rng.random_range(0..100);
 
-    if roll < 50 {
-        let mut item = random_potion();
-        item.rarity = rarity;
-        item
+    let mut item = if roll < 50 {
+        random_potion()
     } else if roll < 75 {
-        let mut item = random_weapon(floor);
-        item.rarity = rarity;
-        item
+        random_weapon(floor)
     } else if roll < 90 {
-        let mut item = random_armor(floor);
-        item.rarity = rarity;
-        item
+        random_armor(floor)
     } else {
-        let mut item = random_ring(floor);
-        item.rarity = rarity;
-        item
-    }
+        random_ring(floor)
+    };
+    item.rarity = rarity;
+    apply_affixes(&mut item, &rarity, floor);
+    item
 }
 
 pub fn random_potion() -> Item {
@@ -225,6 +282,14 @@ pub fn random_potion() -> Item {
         rarity: Rarity::Common,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -244,6 +309,14 @@ pub fn random_weapon(floor: i32) -> Item {
             rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
+            prefix: None,
+            suffix: None,
+            exotic_type: None,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
         },
         2 => Item {
             name: "Shortsword".to_string(),
@@ -258,6 +331,14 @@ pub fn random_weapon(floor: i32) -> Item {
             rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
+            prefix: None,
+            suffix: None,
+            exotic_type: None,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
         },
         _ => {
             let mut rng = rand::rng();
@@ -275,6 +356,14 @@ pub fn random_weapon(floor: i32) -> Item {
                     rarity: Rarity::Common,
                     is_artifact: false,
                     artifact_effect: ArtifactEffect::None,
+                    prefix: None,
+                    suffix: None,
+                    exotic_type: None,
+                    lifesteal: 0,
+                    cooldown_reduction: 0,
+                    freeze_chance: 0,
+                    burn_chance: 0,
+                    hp_bonus: 0,
                 }
             } else {
                 Item {
@@ -290,6 +379,14 @@ pub fn random_weapon(floor: i32) -> Item {
                     rarity: Rarity::Common,
                     is_artifact: false,
                     artifact_effect: ArtifactEffect::None,
+                    prefix: None,
+                    suffix: None,
+                    exotic_type: None,
+                    lifesteal: 0,
+                    cooldown_reduction: 0,
+                    freeze_chance: 0,
+                    burn_chance: 0,
+                    hp_bonus: 0,
                 }
             }
         }
@@ -312,6 +409,14 @@ pub fn random_armor(floor: i32) -> Item {
             rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
+            prefix: None,
+            suffix: None,
+            exotic_type: None,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
         },
         2 => Item {
             name: "Chainmail".to_string(),
@@ -326,6 +431,14 @@ pub fn random_armor(floor: i32) -> Item {
             rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
+            prefix: None,
+            suffix: None,
+            exotic_type: None,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
         },
         _ => Item {
             name: "Plate Armor".to_string(),
@@ -340,6 +453,14 @@ pub fn random_armor(floor: i32) -> Item {
             rarity: Rarity::Common,
             is_artifact: false,
             artifact_effect: ArtifactEffect::None,
+            prefix: None,
+            suffix: None,
+            exotic_type: None,
+            lifesteal: 0,
+            cooldown_reduction: 0,
+            freeze_chance: 0,
+            burn_chance: 0,
+            hp_bonus: 0,
         },
     }
 }
@@ -374,6 +495,14 @@ pub fn random_ring(floor: i32) -> Item {
         rarity: Rarity::Common,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -403,6 +532,14 @@ pub fn artifact_ragefang() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Ragefang,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -420,6 +557,14 @@ pub fn artifact_stonehide() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::StonehidePlate,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -437,6 +582,14 @@ pub fn artifact_warlord_signet() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::WarlordSignet,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -454,6 +607,14 @@ pub fn artifact_shadowfang() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Shadowfang,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -471,6 +632,14 @@ pub fn artifact_wraithwalkers() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Wraithwalkers,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -488,6 +657,14 @@ pub fn artifact_venomcoil() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::Venomcoil,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -505,6 +682,14 @@ pub fn artifact_stormcaller() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::StormcallerStaff,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -522,6 +707,14 @@ pub fn artifact_frostweavrobe() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::FrostweavRobe,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -539,6 +732,14 @@ pub fn artifact_mindfire() -> Item {
         rarity: Rarity::Legendary,
         is_artifact: true,
         artifact_effect: ArtifactEffect::MindFireCrown,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -578,6 +779,14 @@ pub fn named_shadow_slicer() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -595,6 +804,14 @@ pub fn named_bone_crusher() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -612,6 +829,14 @@ pub fn named_spellbound_staff() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -629,6 +854,14 @@ pub fn named_veterans_plate() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -646,6 +879,14 @@ pub fn named_swiftboots() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -663,6 +904,14 @@ pub fn named_sages_robe() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -680,6 +929,14 @@ pub fn named_lions_amulet() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -697,6 +954,14 @@ pub fn named_eagles_eye() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -714,6 +979,14 @@ pub fn named_dragon_heart() -> Item {
         rarity: Rarity::Rare,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -761,6 +1034,14 @@ pub fn warrior_starting_weapon() -> Item {
         rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -778,6 +1059,14 @@ pub fn warrior_starting_armor() -> Item {
         rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -795,6 +1084,14 @@ pub fn rogue_starting_weapon() -> Item {
         rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -812,6 +1109,14 @@ pub fn mage_starting_weapon() -> Item {
         rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
@@ -829,6 +1134,14 @@ pub fn mage_starting_ring() -> Item {
         rarity: Rarity::Uncommon,
         is_artifact: false,
         artifact_effect: ArtifactEffect::None,
+        prefix: None,
+        suffix: None,
+        exotic_type: None,
+        lifesteal: 0,
+        cooldown_reduction: 0,
+        freeze_chance: 0,
+        burn_chance: 0,
+        hp_bonus: 0,
     }
 }
 
