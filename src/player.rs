@@ -6,12 +6,21 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum AbilityType {
-    PowerAttack,    // Warrior 1: next melee 2x damage
-    WarCry,         // Warrior 2: AoE stun
-    ShadowStep,     // Rogue 1: directional teleport + shadow strike buff
-    PoisonBlade,    // Rogue 2: next 3 hits apply poison
-    ChainLightning, // Mage 1: directional chain damage
-    FrostNova,      // Mage 2: AoE freeze + damage
+    PowerAttack,
+    WarCry,
+    ShieldBash,
+    BattleCry,
+    Earthquake,
+    ShadowStep,
+    PoisonBlade,
+    Backstab,
+    FanOfKnives,
+    Assassinate,
+    ChainLightning,
+    FrostNova,
+    ArcaneMissiles,
+    ManaShield,
+    Meteor,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,6 +86,87 @@ impl Ability {
                 name: "Frost Nova".to_string(),
                 ability_type,
                 cooldown_max: 10,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::ShieldBash => Self {
+                name: "Shield Bash".to_string(),
+                ability_type,
+                cooldown_max: 5,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::BattleCry => Self {
+                name: "Battle Cry".to_string(),
+                ability_type,
+                cooldown_max: 12,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::Earthquake => Self {
+                name: "EARTHQUAKE".to_string(),
+                ability_type,
+                cooldown_max: 20,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::Backstab => Self {
+                name: "Backstab".to_string(),
+                ability_type,
+                cooldown_max: 6,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 3,
+            },
+            AbilityType::FanOfKnives => Self {
+                name: "Fan of Knives".to_string(),
+                ability_type,
+                cooldown_max: 8,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::Assassinate => Self {
+                name: "ASSASSINATE".to_string(),
+                ability_type,
+                cooldown_max: 18,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 0,
+            },
+            AbilityType::ArcaneMissiles => Self {
+                name: "Arcane Missiles".to_string(),
+                ability_type,
+                cooldown_max: 5,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 3,
+                buff_ticks_remaining: 20,
+            },
+            AbilityType::ManaShield => Self {
+                name: "Mana Shield".to_string(),
+                ability_type,
+                cooldown_max: 12,
+                cooldown_remaining: 0,
+                is_active: false,
+                charges: 0,
+                buff_ticks_remaining: 5,
+            },
+            AbilityType::Meteor => Self {
+                name: "METEOR".to_string(),
+                ability_type,
+                cooldown_max: 20,
                 cooldown_remaining: 0,
                 is_active: false,
                 charges: 0,
@@ -308,6 +398,9 @@ pub struct Player {
     // Abilities
     pub ability_1: Option<Ability>,
     pub ability_2: Option<Ability>,
+    pub ability_3: Option<Ability>,            // unlocks at level 5
+    pub ability_4: Option<Ability>,            // unlocks at level 10
+    pub ability_5: Option<Ability>,            // unlocks at level 15 (ultimate)
     pub pending_ability_direction: Option<u8>, // which ability (1 or 2) is waiting for direction
     // XP / Leveling
     pub xp: i32,
@@ -315,6 +408,7 @@ pub struct Player {
     pub xp_to_next_level: i32,
     // Status effects
     pub poison_ticks: i32,
+    pub mana_shield_ticks: i32,
     // Artifact state
     pub ragefang_stacks: i32,
     pub ragefang_ticks: i32,
@@ -342,11 +436,17 @@ impl Player {
         let base_stats = class.base_stats();
         let max_hp = base_stats.max_hp();
 
-        // Each class starts with ability 1; ability 2 unlocks at level 5
+        // Each class starts with ability 1; others unlock at levels 5, 10, 15
         let ability_1 = match class {
             Class::Warrior => Some(Ability::new(AbilityType::PowerAttack)),
             Class::Rogue => Some(Ability::new(AbilityType::ShadowStep)),
             Class::Mage => Some(Ability::new(AbilityType::ChainLightning)),
+        };
+
+        let ability_2 = match class {
+            Class::Warrior => Some(Ability::new(AbilityType::WarCry)),
+            Class::Rogue => Some(Ability::new(AbilityType::PoisonBlade)),
+            Class::Mage => Some(Ability::new(AbilityType::FrostNova)),
         };
 
         Self {
@@ -359,12 +459,16 @@ impl Player {
             equipment: Equipment::new(),
             inventory: Vec::new(),
             ability_1,
-            ability_2: None,
+            ability_2,
+            ability_3: None,
+            ability_4: None,
+            ability_5: None,
             pending_ability_direction: None,
             xp: 0,
             level: 1,
             xp_to_next_level: 50,
             poison_ticks: 0,
+            mana_shield_ticks: 0,
             ragefang_stacks: 0,
             ragefang_ticks: 0,
             stonehide_triggered: false,
@@ -380,6 +484,33 @@ impl Player {
             bonus_str: 0,
             bonus_dodge: 0,
             warding_buff: false,
+        }
+    }
+
+    pub fn unlock_abilities(&mut self) {
+        // Unlock ability_3 at level 5
+        if self.level >= 5 && self.ability_3.is_none() {
+            self.ability_3 = Some(match self.class {
+                Class::Warrior => Ability::new(AbilityType::ShieldBash),
+                Class::Rogue => Ability::new(AbilityType::Backstab),
+                Class::Mage => Ability::new(AbilityType::ArcaneMissiles),
+            });
+        }
+        // Unlock ability_4 at level 10
+        if self.level >= 10 && self.ability_4.is_none() {
+            self.ability_4 = Some(match self.class {
+                Class::Warrior => Ability::new(AbilityType::BattleCry),
+                Class::Rogue => Ability::new(AbilityType::FanOfKnives),
+                Class::Mage => Ability::new(AbilityType::ManaShield),
+            });
+        }
+        // Unlock ability_5 (ultimate) at level 15
+        if self.level >= 15 && self.ability_5.is_none() {
+            self.ability_5 = Some(match self.class {
+                Class::Warrior => Ability::new(AbilityType::Earthquake),
+                Class::Rogue => Ability::new(AbilityType::Assassinate),
+                Class::Mage => Ability::new(AbilityType::Meteor),
+            });
         }
     }
 
@@ -451,6 +582,9 @@ impl Player {
     }
 
     pub fn take_damage(&mut self, amount: i32) {
+        if self.mana_shield_ticks > 0 {
+            self.mana_shield_ticks = 0;
+        }
         self.hp = (self.hp - amount).max(0);
     }
 
@@ -554,6 +688,15 @@ impl Player {
             a.tick();
         }
         if let Some(ref mut a) = self.ability_2 {
+            a.tick();
+        }
+        if let Some(ref mut a) = self.ability_3 {
+            a.tick();
+        }
+        if let Some(ref mut a) = self.ability_4 {
+            a.tick();
+        }
+        if let Some(ref mut a) = self.ability_5 {
             a.tick();
         }
 
@@ -770,27 +913,32 @@ impl Player {
                 self.level, stat_msg
             ));
 
-            // Levels 3 and 7: reduce all ability cooldowns by 1 (permanent)
-            if self.level == 3 || self.level == 7 {
+            // Unlock new abilities at certain levels
+            self.unlock_abilities();
+
+            // Levels 3, 5, 7, 10, 15: reduce all ability cooldowns by 1 (permanent)
+            if self.level == 3
+                || self.level == 5
+                || self.level == 7
+                || self.level == 10
+                || self.level == 15
+            {
                 if let Some(ref mut a) = self.ability_1 {
                     a.cooldown_max = (a.cooldown_max - 1).max(1);
                 }
                 if let Some(ref mut a) = self.ability_2 {
                     a.cooldown_max = (a.cooldown_max - 1).max(1);
                 }
-                messages.push("Your abilities grow stronger! Cooldowns reduced.".to_string());
-            }
-
-            // Level 5: unlock 2nd ability
-            if self.level == 5 && self.ability_2.is_none() {
-                self.ability_2 = match self.class {
-                    Class::Warrior => Some(Ability::new(AbilityType::WarCry)),
-                    Class::Rogue => Some(Ability::new(AbilityType::PoisonBlade)),
-                    Class::Mage => Some(Ability::new(AbilityType::FrostNova)),
-                };
-                if let Some(ref a) = self.ability_2 {
-                    messages.push(format!("New ability unlocked: {}!", a.name));
+                if let Some(ref mut a) = self.ability_3 {
+                    a.cooldown_max = (a.cooldown_max - 1).max(1);
                 }
+                if let Some(ref mut a) = self.ability_4 {
+                    a.cooldown_max = (a.cooldown_max - 1).max(1);
+                }
+                if let Some(ref mut a) = self.ability_5 {
+                    a.cooldown_max = (a.cooldown_max - 1).max(1);
+                }
+                messages.push("Your abilities grow stronger! Cooldowns reduced.".to_string());
             }
         }
 

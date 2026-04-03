@@ -10,18 +10,16 @@ Based on research of modern roguelike best practices (2024-2025), here are the r
 |----------|---------|-------------|--------|
 | **1** | **Save/Load System** | Serialize game state to JSON, persist across sessions | Medium |
 | **2** | **Fog of War** | Only reveal tiles player has seen - adds exploration tension | Medium |
-| **3** | **Auto-Explore** | Press key to automatically explore map (QoL essential) | High |
-| **4** | **Shop/Merchant NPC** | Buy/sell items between floors | Medium |
+| **3** | **Shop/Merchant NPC** | Buy/sell items between floors | Medium |
 
 ---
 
 ## Gameplay Improvements
 
 ### Essential Modern Roguelike Features (2025)
-1. **Auto-explore** - Players hate holding arrow keys in empty corridors
-2. **Diversified combat** - Abilities beyond bump-attack (you already have this!)
-3. **Strong early game** - First few floors need variety and excitement
-4. **Achievements system** - Tracks progress across runs
+1. **Diversified combat** - Abilities beyond bump-attack (you already have this!)
+2. **Strong early game** - First few floors need variety and excitement
+3. **Achievements system** - Tracks progress across runs
 
 ### Content Expansions
 - **More item types**: Scrolls, wands, rings with varied effects
@@ -70,14 +68,24 @@ Based on research of modern roguelike best practices (2024-2025), here are the r
 - [x] Fog of War - exploration core mechanic
 - [x] Fix broken inventory - Tab key not working
 
+### Phase 4 (COMPLETED 2026-04-02)
+- [x] 5 abilities per class (4 active + 1 ultimate)
+- [x] Bat Swarm AI (line charge)
+- [x] Spider AI (web traps)
+- [x] Wraith AI (wall phasing)
+- [x] Necromancer AI (resurrection)
+- [x] Goblin King boss (summon minions)
+- [x] Bone Dragon boss (breath attack)
+- [x] Shadow Lord boss (teleport/pools)
+- [x] Boss loot drops (guaranteed Rare/Epic + artifact)
+
 ### Phase 6.5 (Enhancements)
 - [ ] Better dungeon generation (BSP algorithm)
 - [ ] Multiple floor themes (colors, monster types)
-- [ ] Auto-explore - major QoL improvement
 
 ### Phase 7 (Content)
 - [ ] Shops/Merchants
-- [ ] More item types (scrolls, wands)
+- [ ] More item types (scrolls, wands, rings)
 - [ ] Achievements
 - [ ] Lore/Story elements
 

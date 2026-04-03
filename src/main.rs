@@ -16,7 +16,7 @@ use crossterm::{
 use items::{Item, ItemType};
 use map::{DecoObject, Map, RoomType, Tile};
 use monster::{Monster, MonsterAction};
-use player::{AbilityType, Class, Player};
+use player::{Ability, AbilityType, Class, Player};
 use projectile::Projectile;
 use rand::RngExt;
 use std::collections::HashMap;
@@ -1365,12 +1365,53 @@ fn render_ui(
                 String::new()
             }
         });
+    let a3_text = player
+        .ability_3
+        .as_ref()
+        .map(|a| format!("[3]{}", a.status_text()))
+        .unwrap_or_else(|| {
+            if player.level < 10 {
+                "[3]Locked (Lv10)".to_string()
+            } else {
+                String::new()
+            }
+        });
+    let a4_text = player
+        .ability_4
+        .as_ref()
+        .map(|a| format!("[4]{}", a.status_text()))
+        .unwrap_or_else(|| {
+            if player.level < 15 {
+                "[4]Locked (Lv15)".to_string()
+            } else {
+                String::new()
+            }
+        });
+    let a5_text = player
+        .ability_5
+        .as_ref()
+        .map(|a| format!("[5]{}", a.status_text()))
+        .unwrap_or_else(|| {
+            if player.level < 20 {
+                "[5]Locked (Lv20)".to_string()
+            } else {
+                String::new()
+            }
+        });
     let poison_text = if player.poison_ticks > 0 {
         format!(" | POISONED({})", player.poison_ticks)
     } else {
         String::new()
     };
-    let ability_line = format!("{} {} {}", a1_text, a2_text, poison_text);
+    let mana_shield_text = if player.mana_shield_ticks > 0 {
+        format!(" | M-SHIELD({})", player.mana_shield_ticks)
+    } else {
+        String::new()
+    };
+    let ability_line = format!(
+        "{} {} {} {} {}{}{}",
+        a1_text, a2_text, a3_text, a4_text, a5_text, poison_text, mana_shield_text
+    );
     execute!(
         stdout,
         cursor::MoveTo(0, map_height as u16 + 3),
@@ -1707,7 +1748,6 @@ fn main() -> std::io::Result<()> {
                                     continue 'inner;
                                 }
                                 KeyCode::Char('1') => {
-                                    // Activate ability 1
                                     if let Some(ref mut a) = player.ability_1 {
                                         if a.is_ready() && !a.is_active {
                                             match a.ability_type {
@@ -1738,7 +1778,6 @@ fn main() -> std::io::Result<()> {
                                     continue 'inner;
                                 }
                                 KeyCode::Char('2') => {
-                                    // Activate ability 2
                                     if let Some(ref mut a) = player.ability_2 {
                                         if a.is_ready() && !a.is_active {
                                             match a.ability_type {
@@ -1835,6 +1874,446 @@ fn main() -> std::io::Result<()> {
                                     }
                                     continue 'inner;
                                 }
+                                KeyCode::Char('3') => {
+                                    if let Some(ref mut a) = player.ability_3 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::ShieldBash => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let mut nearest: Option<&mut Monster> = None;
+                                                    let mut nearest_dist = 999;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d < nearest_dist && d <= 2 {
+                                                                nearest_dist = d;
+                                                                nearest = Some(m);
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(m) = nearest {
+                                                        m.stun_ticks = 2;
+                                                        log.push(format!(
+                                                            "SHIELD BASH! {} stunned!",
+                                                            m.name
+                                                        ));
+                                                    } else {
+                                                        log.push(
+                                                            "Shield Bash - no target in range!"
+                                                                .to_string(),
+                                                        );
+                                                    }
+                                                }
+                                                AbilityType::Backstab => {
+                                                    player.pending_ability_direction = Some(3);
+                                                    log.push(format!(
+                                                        "{} — choose direction (arrow key).",
+                                                        a.name
+                                                    ));
+                                                }
+                                                AbilityType::ArcaneMissiles => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let missile_dmg =
+                                                        3 + player.effective_stats().potion_bonus();
+                                                    let mut missiles_fired = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() && missiles_fired < 3 {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 6 {
+                                                                m.take_damage(missile_dmg);
+                                                                missiles_fired += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    log.push(format!("Arcane Missile hit {} for {}!", m.name, missile_dmg));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("ARCANE MISSILES! {} missiles fired for {} damage each.", missiles_fired, missile_dmg));
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    } else {
+                                        log.push("Third ability unlocks at level 10.".to_string());
+                                    }
+                                    continue 'inner;
+                                }
+                                KeyCode::Char('4') => {
+                                    if let Some(ref mut a) = player.ability_4 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::BattleCry => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let mut affected = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 4 {
+                                                                m.attack_reduction = 2;
+                                                                affected += 1;
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!(
+                                                        "BATTLE CRY! {} enemies weakened!",
+                                                        affected
+                                                    ));
+                                                }
+                                                AbilityType::FanOfKnives => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let knife_dmg =
+                                                        2 + player.effective_stats().potion_bonus();
+                                                    let mut hit_count = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 4 {
+                                                                m.take_damage(knife_dmg);
+                                                                hit_count += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    log.push(format!(
+                                                                        "Fan of Knives hit {}!",
+                                                                        m.name
+                                                                    ));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("FAN OF KNIVES! {} enemies hit for {} damage!", hit_count, knife_dmg));
+                                                }
+                                                AbilityType::ManaShield => {
+                                                    a.activate();
+                                                    player.mana_shield_ticks = 5;
+                                                    log.push("MANA SHIELD activated! Absorbing damage for 5 turns.".to_string());
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    } else {
+                                        log.push("Fourth ability unlocks at level 15.".to_string());
+                                    }
+                                    continue 'inner;
+                                }
+                                KeyCode::Char('5') => {
+                                    if let Some(ref mut a) = player.ability_5 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::Earthquake => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let quake_dmg =
+                                                        8 + player.effective_stats().potion_bonus();
+                                                    let mut hit_count = 0;
+                                                    let mut stun_count = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 5 {
+                                                                m.take_damage(quake_dmg);
+                                                                m.stun_ticks = 2;
+                                                                hit_count += 1;
+                                                                stun_count += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    log.push(format!(
+                                                                        "Earthquake crushed {}!",
+                                                                        m.name
+                                                                    ));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("EARTHQUAKE! {} enemies hit for {} damage and stunned!", hit_count, quake_dmg));
+                                                }
+                                                AbilityType::Assassinate => {
+                                                    player.pending_ability_direction = Some(5);
+                                                    log.push(format!(
+                                                        "{} — choose direction (arrow key).",
+                                                        a.name
+                                                    ));
+                                                }
+                                                AbilityType::Meteor => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let meteor_dmg = 10
+                                                        + player.effective_stats().potion_bonus();
+                                                    let mut nearest_idx: Option<usize> = None;
+                                                    let mut nearest_dist = 999;
+                                                    for (i, m) in monsters.iter_mut().enumerate() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d < nearest_dist && d <= 8 {
+                                                                nearest_dist = d;
+                                                                nearest_idx = Some(i);
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(idx) = nearest_idx {
+                                                        let (mx, my) =
+                                                            (monsters[idx].x, monsters[idx].y);
+                                                        monsters[idx].take_damage(meteor_dmg);
+                                                        log.push(format!(
+                                                            "METEOR strikes {} for {} damage!",
+                                                            monsters[idx].name, meteor_dmg
+                                                        ));
+                                                        for sm in monsters.iter_mut() {
+                                                            if sm.is_alive() {
+                                                                let d = Map::distance(
+                                                                    mx, my, sm.x, sm.y,
+                                                                );
+                                                                if d <= 2 {
+                                                                    let splash =
+                                                                        (meteor_dmg / 2).max(1);
+                                                                    sm.take_damage(splash);
+                                                                    if !sm.is_alive() {
+                                                                        sm.death_pos =
+                                                                            Some((sm.x, sm.y));
+                                                                        log.push(format!(
+                                                                            "Splash hit {}!",
+                                                                            sm.name
+                                                                        ));
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        if !monsters[idx].is_alive() {
+                                                            monsters[idx].death_pos = Some((
+                                                                monsters[idx].x,
+                                                                monsters[idx].y,
+                                                            ));
+                                                        }
+                                                    } else {
+                                                        log.push(
+                                                            "Meteor - no target in range!"
+                                                                .to_string(),
+                                                        );
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    } else {
+                                        log.push(
+                                            "Ultimate ability unlocks at level 20.".to_string(),
+                                        );
+                                    }
+                                    continue 'inner;
+                                }
+                                KeyCode::Char('4') => {
+                                    if let Some(ref mut a) = player.ability_4 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::BattleCry => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let mut affected = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 4 {
+                                                                m.attack_reduction = 2;
+                                                                affected += 1;
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!(
+                                                        "BATTLE CRY! {} enemies weakened!",
+                                                        affected
+                                                    ));
+                                                }
+                                                AbilityType::FanOfKnives => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let knife_dmg =
+                                                        2 + player.effective_stats().potion_bonus();
+                                                    let mut hit_count = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 4 {
+                                                                m.take_damage(knife_dmg);
+                                                                hit_count += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    log.push(format!(
+                                                                        "Fan of Knives hit {}!",
+                                                                        m.name
+                                                                    ));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("FAN OF KNIVES! {} enemies hit for {} damage!", hit_count, knife_dmg));
+                                                }
+                                                AbilityType::ManaShield => {
+                                                    a.activate();
+                                                    player.mana_shield_ticks = 5;
+                                                    log.push("MANA SHIELD activated! Absorbing damage for 5 turns.".to_string());
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    } else {
+                                        log.push("Fourth ability unlocks at level 15.".to_string());
+                                    }
+                                    continue 'inner;
+                                }
+                                KeyCode::Char('5') => {
+                                    if let Some(ref mut a) = player.ability_5 {
+                                        if a.is_ready() && !a.is_active {
+                                            match a.ability_type {
+                                                AbilityType::Earthquake => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let quake_dmg =
+                                                        8 + player.effective_stats().potion_bonus();
+                                                    let mut hit_count = 0;
+                                                    let mut stun_count = 0;
+                                                    for m in monsters.iter_mut() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d <= 5 {
+                                                                m.take_damage(quake_dmg);
+                                                                m.stun_ticks = 2;
+                                                                hit_count += 1;
+                                                                stun_count += 1;
+                                                                if !m.is_alive() {
+                                                                    m.death_pos = Some((m.x, m.y));
+                                                                    log.push(format!(
+                                                                        "Earthquake crushed {}!",
+                                                                        m.name
+                                                                    ));
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                    log.push(format!("EARTHQUAKE! {} enemies hit for {} damage and stunned!", hit_count, quake_dmg));
+                                                }
+                                                AbilityType::Assassinate => {
+                                                    player.pending_ability_direction = Some(5);
+                                                    log.push(format!(
+                                                        "{} — choose direction (arrow key).",
+                                                        a.name
+                                                    ));
+                                                }
+                                                AbilityType::Meteor => {
+                                                    a.activate();
+                                                    a.is_active = false;
+                                                    let px = player.x;
+                                                    let py = player.y;
+                                                    let meteor_dmg = 10
+                                                        + player.effective_stats().potion_bonus();
+                                                    let mut nearest_idx: Option<usize> = None;
+                                                    let mut nearest_dist = 999;
+                                                    for (i, m) in monsters.iter_mut().enumerate() {
+                                                        if m.is_alive() {
+                                                            let d = Map::distance(px, py, m.x, m.y);
+                                                            if d < nearest_dist && d <= 8 {
+                                                                nearest_dist = d;
+                                                                nearest_idx = Some(i);
+                                                            }
+                                                        }
+                                                    }
+                                                    if let Some(idx) = nearest_idx {
+                                                        let (mx, my) =
+                                                            (monsters[idx].x, monsters[idx].y);
+                                                        monsters[idx].take_damage(meteor_dmg);
+                                                        log.push(format!(
+                                                            "METEOR strikes {} for {} damage!",
+                                                            monsters[idx].name, meteor_dmg
+                                                        ));
+                                                        for sm in monsters.iter_mut() {
+                                                            if sm.is_alive() {
+                                                                let d = Map::distance(
+                                                                    mx, my, sm.x, sm.y,
+                                                                );
+                                                                if d <= 2 {
+                                                                    let splash =
+                                                                        (meteor_dmg / 2).max(1);
+                                                                    sm.take_damage(splash);
+                                                                    if !sm.is_alive() {
+                                                                        sm.death_pos =
+                                                                            Some((sm.x, sm.y));
+                                                                        log.push(format!(
+                                                                            "Splash hit {}!",
+                                                                            sm.name
+                                                                        ));
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                        if !monsters[idx].is_alive() {
+                                                            monsters[idx].death_pos = Some((
+                                                                monsters[idx].x,
+                                                                monsters[idx].y,
+                                                            ));
+                                                        }
+                                                    } else {
+                                                        log.push(
+                                                            "Meteor - no target in range!"
+                                                                .to_string(),
+                                                        );
+                                                    }
+                                                }
+                                                _ => {}
+                                            }
+                                        } else if a.cooldown_remaining > 0 {
+                                            log.push(format!(
+                                                "{} on cooldown ({} ticks).",
+                                                a.name, a.cooldown_remaining
+                                            ));
+                                        }
+                                    } else {
+                                        log.push(
+                                            "Ultimate ability unlocks at level 20.".to_string(),
+                                        );
+                                    }
+                                    continue 'inner;
+                                }
                                 KeyCode::Up => {
                                     if player.pending_ability_direction.is_some() {
                                         ability_dx = 0;
@@ -1881,10 +2360,13 @@ fn main() -> std::io::Result<()> {
                                 if ability_dx != 0 || ability_dy != 0 {
                                     player.pending_ability_direction = None;
 
-                                    let ability_ref = if slot == 1 {
-                                        &player.ability_1
-                                    } else {
-                                        &player.ability_2
+                                    let ability_ref: Option<&Ability> = match slot {
+                                        1 => player.ability_1.as_ref(),
+                                        2 => player.ability_2.as_ref(),
+                                        3 => player.ability_3.as_ref(),
+                                        4 => player.ability_4.as_ref(),
+                                        5 => player.ability_5.as_ref(),
+                                        _ => None,
                                     };
 
                                     if let Some(a) = ability_ref {
@@ -2067,16 +2549,199 @@ fn main() -> std::io::Result<()> {
                                                 }
 
                                                 // Put on cooldown
-                                                if slot == 1 {
-                                                    if let Some(ref mut a) = player.ability_1 {
-                                                        a.activate();
-                                                        a.is_active = false; // instant, no buff
+                                                match slot {
+                                                    1 => {
+                                                        if let Some(ref mut a) = player.ability_1 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
                                                     }
-                                                } else {
-                                                    if let Some(ref mut a) = player.ability_2 {
-                                                        a.activate();
-                                                        a.is_active = false;
+                                                    2 => {
+                                                        if let Some(ref mut a) = player.ability_2 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
                                                     }
+                                                    3 => {
+                                                        if let Some(ref mut a) = player.ability_3 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    4 => {
+                                                        if let Some(ref mut a) = player.ability_4 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    5 => {
+                                                        if let Some(ref mut a) = player.ability_5 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            AbilityType::Backstab => {
+                                                let px = player.x as i32;
+                                                let py = player.y as i32;
+                                                let target_x = (px + ability_dx) as usize;
+                                                let target_y = (py + ability_dy) as usize;
+                                                let backstab_dmg =
+                                                    4 + player.effective_stats().potion_bonus();
+                                                for m in monsters.iter_mut() {
+                                                    if m.is_alive()
+                                                        && m.x == target_x
+                                                        && m.y == target_y
+                                                    {
+                                                        m.take_damage(backstab_dmg);
+                                                        log.push(format!(
+                                                            "BACKSTAB! {} takes {} damage!",
+                                                            m.name, backstab_dmg
+                                                        ));
+                                                        if !m.is_alive() {
+                                                            m.death_pos = Some((m.x, m.y));
+                                                            log.push(format!(
+                                                                "[**] The {} dies!",
+                                                                m.name
+                                                            ));
+                                                            let xp = m.xp_value();
+                                                            let level_msgs = player.gain_xp(xp);
+                                                            log.push(format!("+{} XP", xp));
+                                                            for msg in level_msgs {
+                                                                log.push(msg);
+                                                            }
+                                                            erase_entity(
+                                                                &mut stdout,
+                                                                &map,
+                                                                m.x,
+                                                                m.y,
+                                                                current_floor,
+                                                            )?;
+                                                        }
+                                                        break;
+                                                    }
+                                                }
+                                                match slot {
+                                                    1 => {
+                                                        if let Some(ref mut a) = player.ability_1 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    2 => {
+                                                        if let Some(ref mut a) = player.ability_2 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    3 => {
+                                                        if let Some(ref mut a) = player.ability_3 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    4 => {
+                                                        if let Some(ref mut a) = player.ability_4 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    5 => {
+                                                        if let Some(ref mut a) = player.ability_5 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    _ => {}
+                                                }
+                                            }
+                                            AbilityType::Assassinate => {
+                                                let px = player.x as i32;
+                                                let py = player.y as i32;
+                                                let target_x = (px + ability_dx) as usize;
+                                                let target_y = (py + ability_dy) as usize;
+                                                let assassinate_dmg =
+                                                    8 + player.effective_stats().potion_bonus();
+                                                for m in monsters.iter_mut() {
+                                                    if m.is_alive()
+                                                        && m.x == target_x
+                                                        && m.y == target_y
+                                                    {
+                                                        let hp_percent =
+                                                            m.hp as f32 / m.max_hp as f32;
+                                                        let execute_bonus = if hp_percent < 0.3 {
+                                                            2.0
+                                                        } else {
+                                                            1.0
+                                                        };
+                                                        let final_dmg = (assassinate_dmg as f32
+                                                            * execute_bonus)
+                                                            as i32;
+                                                        m.take_damage(final_dmg);
+                                                        log.push(format!(
+                                                            "ASSASSINATE! {} takes {} damage!",
+                                                            m.name, final_dmg
+                                                        ));
+                                                        if hp_percent < 0.3 {
+                                                            log.push("EXECUTED!".to_string());
+                                                        }
+                                                        if !m.is_alive() {
+                                                            m.death_pos = Some((m.x, m.y));
+                                                            log.push(format!(
+                                                                "[**] The {} dies!",
+                                                                m.name
+                                                            ));
+                                                            let xp = m.xp_value();
+                                                            let level_msgs = player.gain_xp(xp);
+                                                            log.push(format!("+{} XP", xp));
+                                                            for msg in level_msgs {
+                                                                log.push(msg);
+                                                            }
+                                                            erase_entity(
+                                                                &mut stdout,
+                                                                &map,
+                                                                m.x,
+                                                                m.y,
+                                                                current_floor,
+                                                            )?;
+                                                        }
+                                                        break;
+                                                    }
+                                                }
+                                                match slot {
+                                                    1 => {
+                                                        if let Some(ref mut a) = player.ability_1 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    2 => {
+                                                        if let Some(ref mut a) = player.ability_2 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    3 => {
+                                                        if let Some(ref mut a) = player.ability_3 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    4 => {
+                                                        if let Some(ref mut a) = player.ability_4 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    5 => {
+                                                        if let Some(ref mut a) = player.ability_5 {
+                                                            a.activate();
+                                                            a.is_active = false;
+                                                        }
+                                                    }
+                                                    _ => {}
                                                 }
                                             }
                                             _ => {}
@@ -2462,6 +3127,13 @@ fn main() -> std::io::Result<()> {
                         player.take_damage(1);
                         player.damage_taken += 1;
                         log.push("Poison burns in your veins! (-1 HP)".to_string());
+                    }
+
+                    if player.mana_shield_ticks > 0 {
+                        player.mana_shield_ticks -= 1;
+                        if player.mana_shield_ticks == 0 {
+                            log.push("Mana Shield fades.".to_string());
+                        }
                     }
 
                     process_projectiles(

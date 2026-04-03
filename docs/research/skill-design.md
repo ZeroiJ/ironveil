@@ -243,3 +243,68 @@ When dual-mastery is implemented, skills can combine:
 ---
 
 *Research document for Ironveil skill system design.*
+
+---
+
+## 10. Implementation Status (2026-04-02)
+
+### Completed Features
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| 5 abilities per class (4 active + 1 ult) | ✅ Done | Expanded from 2 abilities |
+| Level-based unlock system | ✅ Done | Lv1=1, Lv5=2, Lv10=3, Lv15=4, Lv20=5 |
+| Hotkey support (1-5) | ✅ Done | Input handling in main.rs |
+| HUD display (5 slots) | ✅ Done | Shows cooldowns and lock status |
+| Mana Shield mechanic | ✅ Done | Absorbs one hit, lasts 5 turns |
+
+### Implemented Abilities by Class
+
+**WARRIOR**
+| Key | Ability | Cooldown | Unlock Level |
+|-----|---------|----------|--------------|
+| 1 | PowerAttack | 6 | 1 |
+| 2 | WarCry | 8 | 5 |
+| 3 | ShieldBash | 5 | 10 |
+| 4 | BattleCry | 12 | 15 |
+| 5 | Earthquake (Ult) | 20 | 20 |
+
+**ROGUE**
+| Key | Ability | Cooldown | Unlock Level |
+|-----|---------|----------|--------------|
+| 1 | ShadowStep | 5 | 1 |
+| 2 | PoisonBlade | 7 | 5 |
+| 3 | Backstab | 6 | 10 |
+| 4 | FanOfKnives | 8 | 15 |
+| 5 | Assassinate (Ult) | 18 | 20 |
+
+**MAGE**
+| Key | Ability | Cooldown | Unlock Level |
+|-----|---------|----------|--------------|
+| 1 | ChainLightning | 6 | 1 |
+| 2 | FrostNova | 8 | 5 |
+| 3 | ArcaneMissiles | 5 | 10 |
+| 4 | ManaShield | 12 | 15 |
+| 5 | Meteor (Ult) | 20 | 20 |
+
+### Ability Mechanics Implemented
+
+- **ShieldBash**: Stuns nearest enemy within 2 tiles for 2 turns
+- **Backstab**: Directional attack, 4 + INT damage
+- **ArcaneMissiles**: Fires 3 homing missiles at up to 3 nearest enemies (range 6)
+- **BattleCry**: Reduces attack of all enemies within 4 tiles by 2
+- **FanOfKnives**: AoE damage to all enemies within 4 tiles
+- **ManaShield**: Absorbs next incoming hit, consumes shield
+- **Earthquake**: Massive AoE (range 5), 8 + INT damage + stun for 2 turns
+- **Assassinate**: Directional execute, 8 + INT damage, 2x if target <30% HP
+- **Meteor**: Single target 10 + INT with splash damage (radius 2)
+
+### Files Modified
+
+- `src/player.rs` - Ability struct, Player struct, unlock logic
+- `src/main.rs` - Input handling, ability activation, HUD display
+- `src/monster.rs` - Added attack_reduction field for Battle Cry
+
+### Cooldown Reduction (Level-based)
+
+Cooldowns reduced at levels: 3, 5, 7, 10, 15 (existing system)

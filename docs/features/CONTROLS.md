@@ -15,9 +15,12 @@
 |-----|--------|
 | `q` / `Esc` | Quit game |
 | `Tab` | Open inventory |
-| `1` | Activate ability 1 |
-| `2` | Activate ability 2 (unlock at Lv5) |
-| Arrow key (after 1/2) | Set direction for directional abilities |
+| `1` | Activate ability 1 (unlocked at Lv1) |
+| `2` | Activate ability 2 (unlocked at Lv5) |
+| `3` | Activate ability 3 (unlocked at Lv10) |
+| `4` | Activate ability 4 (unlocked at Lv15) |
+| `5` | Activate ability 5 - Ultimate (unlocked at Lv20) |
+| Arrow key (after 1-5) | Set direction for directional abilities |
 | Any other key | Cancel ability direction |
 
 ## Save/Load
@@ -62,7 +65,7 @@ XP:42/120 [###-------] STR:14 DEX:10 INT:8 CON:14 Def:1 | Tab:Inv
 
 **Ability Line:**
 ```
-[1]Power Attack (Ready) [2]War Cry (Lv5)
+[1]Power Attack (Ready) [2]War Cry (Ready) [3]Shield Bash (Ready) [4]Locked (Lv15) [5]Locked (Lv20)
 ```
 
 **Message Log:**
