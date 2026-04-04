@@ -16,7 +16,7 @@ use crossterm::{
     terminal::{self, Clear, ClearType},
 };
 use items::{Item, ItemType};
-use map::{DecoObject, Map, RoomType, Tile};
+use map::{DecoObject, DungeonFeature, Map, RoomType, Tile};
 use monster::{Monster, MonsterAction};
 use player::{Ability, AbilityType, Class, Player};
 use projectile::Projectile;
@@ -172,6 +172,42 @@ fn render_tile(
                 Color::DarkGrey
             };
             execute!(stdout, SetForegroundColor(color), Print('>'))?;
+        }
+        Tile::ShallowWater => {
+            let color = if visible {
+                Color::Cyan
+            } else {
+                Color::DarkGrey
+            };
+            execute!(stdout, SetForegroundColor(color), Print('~'))?;
+        }
+        Tile::DeepWater => {
+            let color = if visible {
+                Color::DarkBlue
+            } else {
+                Color::DarkGrey
+            };
+            execute!(stdout, SetForegroundColor(color), Print('≈'))?;
+        }
+        Tile::Lava => {
+            let color = if visible { Color::Red } else { Color::DarkGrey };
+            execute!(stdout, SetForegroundColor(color), Print('≈'))?;
+        }
+        Tile::Chasm => {
+            let color = if visible {
+                Color::Black
+            } else {
+                Color::DarkGrey
+            };
+            execute!(stdout, SetForegroundColor(color), Print(' '))?;
+        }
+        Tile::ChasmEdge => {
+            let color = if visible {
+                Color::DarkGrey
+            } else {
+                Color::DarkGrey
+            };
+            execute!(stdout, SetForegroundColor(color), Print('░'))?;
         }
     }
     Ok(())
@@ -345,6 +381,33 @@ fn render_deco_objects(
     Ok(())
 }
 
+fn render_dungeon_features(stdout: &mut std::io::Stdout, map: &Map) -> std::io::Result<()> {
+    for (&(x, y), feature) in &map.features {
+        if !map.current_visibility[x][y] && !map.visibility[x][y] {
+            continue;
+        }
+
+        let (ch, color) = match feature {
+            DungeonFeature::WallCrack => ('~', Color::DarkGrey),
+            DungeonFeature::FloorDebris => (',', Color::DarkYellow),
+            DungeonFeature::Bloodstain => ('*', Color::DarkRed),
+            DungeonFeature::MossPatch => ('"', Color::DarkGreen),
+            DungeonFeature::ScorchMark => ('x', Color::DarkGrey),
+            DungeonFeature::WaterPuddle => ('~', Color::DarkCyan),
+        };
+
+        let draw_color = if map.current_visibility[x][y] {
+            color
+        } else {
+            Color::DarkGrey
+        };
+
+        execute!(stdout, cursor::MoveTo(x as u16, y as u16))?;
+        execute!(stdout, SetForegroundColor(draw_color), Print(ch))?;
+    }
+    Ok(())
+}
+
 fn render_minimap(
     stdout: &mut std::io::Stdout,
     map: &Map,
@@ -430,6 +493,9 @@ fn render_minimap(
                 let (glyph, color) = match map.tiles[real_x][real_y] {
                     Tile::Wall | Tile::SecretDoor => ("#", Color::DarkGrey),
                     Tile::Floor | Tile::Stairs => (".", Color::Black),
+                    Tile::ShallowWater | Tile::DeepWater => ("~", Color::DarkCyan),
+                    Tile::Lava => ("~", Color::DarkRed),
+                    Tile::Chasm | Tile::ChasmEdge => (" ", Color::Black),
                 };
 
                 let color = if map.current_visibility[real_x][real_y] {
@@ -1533,7 +1599,11 @@ fn main() -> std::io::Result<()> {
         let map_height = (term_height as usize).saturating_sub(7);
         let mut first_map = Map::new(map_width, map_height, 1);
         first_map.assign_room_types(1);
+        first_map.stamp_vaults(1);
         first_map.generate_decorations();
+        first_map.place_lakes(1);
+        first_map.place_machines(1);
+        first_map.scatter_features(1);
         let (spawn_x, spawn_y) = first_map.get_starting_position();
 
         let mut player = Player::new(spawn_x, spawn_y, chosen_class);
@@ -1573,7 +1643,11 @@ fn main() -> std::io::Result<()> {
             } else {
                 let mut m = Map::new(map_width, map_height, current_floor);
                 m.assign_room_types(current_floor);
+                m.stamp_vaults(current_floor);
                 m.generate_decorations();
+                m.place_lakes(current_floor);
+                m.place_machines(current_floor);
+                m.scatter_features(current_floor);
                 let (sx, sy) = m.get_starting_position();
                 player.x = sx;
                 player.y = sy;
@@ -1664,6 +1738,7 @@ fn main() -> std::io::Result<()> {
                     &monsters,
                 )?;
                 render_webs(&mut stdout, &map, &webs)?;
+                render_dungeon_features(&mut stdout, &map)?;
                 render_deco_objects(&mut stdout, &map, true)?;
                 render_ground_items(&mut stdout, &map, &ground_items)?;
                 render_monsters(&mut stdout, &map, &monsters)?;
@@ -3079,6 +3154,18 @@ fn main() -> std::io::Result<()> {
                                                     "The shrine pulses... {}!",
                                                     buff_msg
                                                 ));
+
+                                                if let Some((machine_type, effect_pos)) =
+                                                    map.activate_machine((player.x, player.y))
+                                                {
+                                                    use map::MachineType;
+                                                    match machine_type {
+                                                        MachineType::ShrineTrap => {
+                                                            log.push(format!("You hear a rumble from somewhere on this floor..."));
+                                                        }
+                                                        _ => {}
+                                                    }
+                                                }
                                             }
                                         }
 

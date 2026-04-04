@@ -8,6 +8,11 @@ pub enum Tile {
     Floor,
     Stairs,
     SecretDoor,
+    ShallowWater,
+    DeepWater,
+    Lava,
+    Chasm,
+    ChasmEdge,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -38,6 +43,96 @@ pub enum TrapType {
     Alarm,
 }
 
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum DungeonFeature {
+    WallCrack,
+    FloorDebris,
+    Bloodstain,
+    MossPatch,
+    ScorchMark,
+    WaterPuddle,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum VaultType {
+    ThroneRoom,
+    Armory,
+    Prison,
+    RitualChamber,
+    TreasureVault,
+    Library,
+}
+
+pub struct VaultTemplate {
+    pub vault_type: VaultType,
+    pub pattern: &'static [&'static str],
+    pub min_width: usize,
+    pub min_height: usize,
+}
+
+impl VaultTemplate {
+    const fn new(vault_type: VaultType, pattern: &'static [&'static str]) -> Self {
+        let min_height = pattern.len();
+        let min_width = if min_height > 0 { pattern[0].len() } else { 0 };
+        Self {
+            vault_type,
+            pattern,
+            min_width,
+            min_height,
+        }
+    }
+}
+
+pub const VAULT_TEMPLATES: &[VaultTemplate] = &[
+    VaultTemplate::new(
+        VaultType::ThroneRoom,
+        &[
+            "###.###", "#.....#", "#.P.P.#", "...*...", "#.P.P.#", "#.....#", "###.###",
+        ],
+    ),
+    VaultTemplate::new(
+        VaultType::Armory,
+        &["#####", "#C.C#", "#...#", "#C.C#", "##.##"],
+    ),
+    VaultTemplate::new(
+        VaultType::Prison,
+        &[
+            "###.###", "#.#.#.#", "#.#.#.#", ".......", "#.#.#.#", "#.#.#.#", "###.###",
+        ],
+    ),
+    VaultTemplate::new(
+        VaultType::RitualChamber,
+        &[
+            "#######", "#T...T#", "#.....#", "#..A..#", "#.....#", "#T...T#", "###.###",
+        ],
+    ),
+    VaultTemplate::new(
+        VaultType::TreasureVault,
+        &["#####", "#CCC#", "#C*C#", "#CCC#", "##.##"],
+    ),
+    VaultTemplate::new(
+        VaultType::Library,
+        &[
+            "#######", "#P...P#", "#.....#", "...A...", "#.....#", "#P...P#", "#######",
+        ],
+    ),
+];
+
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum MachineType {
+    ShrineTrap,
+    TreasureKey,
+    BossHazard,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Machine {
+    pub machine_type: MachineType,
+    pub trigger_pos: (usize, usize),
+    pub effect_pos: (usize, usize),
+    pub activated: bool,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Map {
     pub width: usize,
@@ -47,7 +142,9 @@ pub struct Map {
     pub room_types: Vec<RoomType>,
     pub deco_objects: HashMap<(usize, usize), DecoObject>,
     pub trap_tiles: HashMap<(usize, usize), TrapType>,
+    pub features: HashMap<(usize, usize), DungeonFeature>,
     pub shrine_used: HashSet<(usize, usize)>,
+    pub machines: Vec<Machine>,
     pub visibility: Vec<Vec<bool>>,
     pub current_visibility: Vec<Vec<bool>>,
 }
@@ -106,6 +203,10 @@ impl Map {
             }
         }
 
+        let target_loops = rng.random_range(3..=5);
+        Map::create_loops(&mut tiles, width, height, target_loops);
+        Map::cleanup_dungeon(&mut tiles, width, height);
+
         let room_types = vec![RoomType::Normal; rooms.len()];
 
         Map {
@@ -116,7 +217,9 @@ impl Map {
             room_types,
             deco_objects: HashMap::new(),
             trap_tiles: HashMap::new(),
+            features: HashMap::new(),
             shrine_used: HashSet::new(),
+            machines: Vec::new(),
             visibility: vec![vec![false; height]; width],
             current_visibility: vec![vec![false; height]; width],
         }
@@ -920,6 +1023,233 @@ impl Map {
         (x1 as i32 - x2 as i32).abs() + (y1 as i32 - y2 as i32).abs()
     }
 
+    /// A* pathfinding that returns the full path distance between two points.
+    /// Returns None if no path exists. Used for loop creation to find walls
+    /// that separate distant floor tiles.
+    fn astar_distance(&self, start: (usize, usize), goal: (usize, usize)) -> Option<i32> {
+        use std::cmp::Ordering;
+        use std::collections::{BinaryHeap, HashMap};
+
+        if start == goal {
+            return Some(0);
+        }
+
+        #[derive(Eq, PartialEq)]
+        struct Node {
+            cost: i32,
+            pos: (usize, usize),
+        }
+        impl Ord for Node {
+            fn cmp(&self, other: &Self) -> Ordering {
+                other.cost.cmp(&self.cost) // min-heap
+            }
+        }
+        impl PartialOrd for Node {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
+            }
+        }
+
+        let mut open = BinaryHeap::new();
+        let mut g_score: HashMap<(usize, usize), i32> = HashMap::new();
+
+        g_score.insert(start, 0);
+        let h = |p: (usize, usize)| -> i32 {
+            (p.0 as i32 - goal.0 as i32).abs() + (p.1 as i32 - goal.1 as i32).abs()
+        };
+        open.push(Node {
+            cost: h(start),
+            pos: start,
+        });
+
+        // Limit search to prevent lag — loop creation doesn't need to find very long paths
+        let mut iterations = 0;
+        let max_iterations = 800;
+
+        while let Some(Node { pos, .. }) = open.pop() {
+            iterations += 1;
+            if iterations > max_iterations {
+                return None;
+            }
+
+            if pos == goal {
+                return g_score.get(&goal).copied();
+            }
+
+            let neighbors: [(i32, i32); 4] = [(-1, 0), (1, 0), (0, -1), (0, 1)];
+            for (ndx, ndy) in &neighbors {
+                let nx = pos.0 as i32 + ndx;
+                let ny = pos.1 as i32 + ndy;
+                if nx < 0 || ny < 0 {
+                    continue;
+                }
+                let np = (nx as usize, ny as usize);
+
+                if !self.is_walkable(np.0, np.1) {
+                    continue;
+                }
+
+                let tentative_g = g_score
+                    .get(&pos)
+                    .copied()
+                    .unwrap_or(i32::MAX)
+                    .saturating_add(1);
+                if tentative_g < g_score.get(&np).copied().unwrap_or(i32::MAX) {
+                    g_score.insert(np, tentative_g);
+                    open.push(Node {
+                        cost: tentative_g + h(np),
+                        pos: np,
+                    });
+                }
+            }
+        }
+        None
+    }
+
+    /// Brogue-style loop creation: scan walls with floor on both sides,
+    /// punch through if the floor tiles are distant by A* pathfinding.
+    /// Target: 3-5 loops per floor.
+    fn create_loops(tiles: &mut Vec<Vec<Tile>>, width: usize, height: usize, target_loops: usize) {
+        let min_astar_distance = 15;
+        let mut loops_created = 0;
+        let mut candidates: Vec<(usize, usize, (usize, usize), (usize, usize))> = Vec::new();
+
+        let temp_map = Map {
+            width,
+            height,
+            tiles: tiles.clone(),
+            rooms: Vec::new(),
+            room_types: Vec::new(),
+            deco_objects: HashMap::new(),
+            trap_tiles: HashMap::new(),
+            features: HashMap::new(),
+            shrine_used: HashSet::new(),
+            machines: Vec::new(),
+            visibility: vec![vec![false; height]; width],
+            current_visibility: vec![vec![false; height]; width],
+        };
+
+        for x in 1..width - 1 {
+            for y in 1..height - 1 {
+                if tiles[x][y] != Tile::Wall {
+                    continue;
+                }
+
+                let floor_left = x > 0 && tiles[x - 1][y] == Tile::Floor;
+                let floor_right = x < width - 1 && tiles[x + 1][y] == Tile::Floor;
+
+                if floor_left && floor_right {
+                    let left_pos = (x - 1, y);
+                    let right_pos = (x + 1, y);
+                    if let Some(dist) = temp_map.astar_distance(left_pos, right_pos) {
+                        if dist >= min_astar_distance {
+                            candidates.push((x, y, left_pos, right_pos));
+                        }
+                    }
+                }
+
+                let floor_up = y > 0 && tiles[x][y - 1] == Tile::Floor;
+                let floor_down = y < height - 1 && tiles[x][y + 1] == Tile::Floor;
+
+                if floor_up && floor_down {
+                    let up_pos = (x, y - 1);
+                    let down_pos = (x, y + 1);
+                    if let Some(dist) = temp_map.astar_distance(up_pos, down_pos) {
+                        if dist >= min_astar_distance {
+                            candidates.push((x, y, up_pos, down_pos));
+                        }
+                    }
+                }
+            }
+        }
+
+        candidates.sort_by(|a, b| {
+            let dist_a = temp_map.astar_distance(a.2, a.3).unwrap_or(0);
+            let dist_b = temp_map.astar_distance(b.2, b.3).unwrap_or(0);
+            dist_b.cmp(&dist_a)
+        });
+
+        for (wx, wy, _, _) in candidates {
+            if loops_created >= target_loops {
+                break;
+            }
+
+            if tiles[wx][wy] != Tile::Wall {
+                continue;
+            }
+
+            tiles[wx][wy] = Tile::Floor;
+            loops_created += 1;
+        }
+    }
+
+    fn cleanup_dungeon(tiles: &mut Vec<Vec<Tile>>, width: usize, height: usize) {
+        let mut changed = true;
+        let max_passes = 3;
+        let mut pass = 0;
+
+        while changed && pass < max_passes {
+            changed = false;
+            pass += 1;
+
+            for x in 1..width - 1 {
+                for y in 1..height - 1 {
+                    if tiles[x][y] == Tile::Wall {
+                        let floor_nw = tiles[x - 1][y - 1] == Tile::Floor;
+                        let floor_ne = tiles[x + 1][y - 1] == Tile::Floor;
+                        let floor_sw = tiles[x - 1][y + 1] == Tile::Floor;
+                        let floor_se = tiles[x + 1][y + 1] == Tile::Floor;
+                        let floor_n = tiles[x][y - 1] == Tile::Floor;
+                        let floor_s = tiles[x][y + 1] == Tile::Floor;
+                        let floor_w = tiles[x - 1][y] == Tile::Floor;
+                        let floor_e = tiles[x + 1][y] == Tile::Floor;
+
+                        let diag_gap =
+                            (floor_nw && floor_se && !floor_n && !floor_s && !floor_w && !floor_e)
+                                || (floor_ne
+                                    && floor_sw
+                                    && !floor_n
+                                    && !floor_s
+                                    && !floor_w
+                                    && !floor_e);
+
+                        if diag_gap {
+                            tiles[x][y] = Tile::Floor;
+                            changed = true;
+                            continue;
+                        }
+
+                        let wall_n = tiles[x][y - 1] == Tile::Wall;
+                        let wall_s = tiles[x][y + 1] == Tile::Wall;
+                        let wall_w = tiles[x - 1][y] == Tile::Wall;
+                        let wall_e = tiles[x + 1][y] == Tile::Wall;
+                        let cardinal_walls = [wall_n, wall_s, wall_w, wall_e]
+                            .iter()
+                            .filter(|&&w| w)
+                            .count();
+
+                        if cardinal_walls == 0 {
+                            tiles[x][y] = Tile::Floor;
+                            changed = true;
+                            continue;
+                        }
+
+                        if cardinal_walls == 1 {
+                            let floor_count = [floor_n, floor_s, floor_w, floor_e]
+                                .iter()
+                                .filter(|&&f| f)
+                                .count();
+                            if floor_count >= 2 {
+                                tiles[x][y] = Tile::Floor;
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /// Check if a position is in a corridor (walls on 2+ opposite sides).
     pub fn is_corridor(&self, x: usize, y: usize) -> bool {
         if x == 0 || y == 0 || x >= self.width - 1 || y >= self.height - 1 {
@@ -1048,5 +1378,601 @@ impl Map {
                 _ => {}
             }
         }
+    }
+
+    pub fn scatter_features(&mut self, floor: i32) {
+        let mut rng = rand::rng();
+
+        for x in 1..self.width - 1 {
+            for y in 1..self.height - 1 {
+                if self.tiles[x][y] == Tile::Wall {
+                    let has_floor_neighbor = (x > 0 && self.tiles[x - 1][y] == Tile::Floor)
+                        || (x < self.width - 1 && self.tiles[x + 1][y] == Tile::Floor)
+                        || (y > 0 && self.tiles[x][y - 1] == Tile::Floor)
+                        || (y < self.height - 1 && self.tiles[x][y + 1] == Tile::Floor);
+
+                    if has_floor_neighbor {
+                        let crack_chance = 0.02 + (floor as f64 * 0.005);
+                        if rng.random_bool(crack_chance.min(0.08)) {
+                            self.features.insert((x, y), DungeonFeature::WallCrack);
+                        }
+                    }
+                }
+
+                if self.tiles[x][y] == Tile::Floor
+                    && !self.deco_objects.contains_key(&(x, y))
+                    && !self.trap_tiles.contains_key(&(x, y))
+                {
+                    let room_type = self.get_room_type_at(x, y);
+
+                    match room_type {
+                        RoomType::Trap => {
+                            if rng.random_bool(0.15) {
+                                self.features.insert((x, y), DungeonFeature::ScorchMark);
+                            }
+                        }
+                        RoomType::Shrine | RoomType::Treasure => {
+                            if rng.random_bool(0.12) {
+                                self.features.insert((x, y), DungeonFeature::MossPatch);
+                            }
+                        }
+                        RoomType::Boss => {
+                            if rng.random_bool(0.20) {
+                                self.features.insert((x, y), DungeonFeature::Bloodstain);
+                            }
+                        }
+                        _ => {
+                            if rng.random_bool(0.03) {
+                                self.features.insert((x, y), DungeonFeature::FloorDebris);
+                            }
+                            if floor >= 4 && floor <= 6 && rng.random_bool(0.05) {
+                                self.features.insert((x, y), DungeonFeature::WaterPuddle);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for (i, room_type) in self.room_types.iter().enumerate() {
+            if *room_type == RoomType::Normal || *room_type == RoomType::Boss {
+                let room = &self.rooms[i];
+                let spawn_x = (room.x1 + room.x2) / 2;
+                let spawn_y = (room.y1 + room.y2) / 2;
+
+                for dx in -1i32..=1 {
+                    for dy in -1i32..=1 {
+                        let bx = (spawn_x as i32 + dx) as usize;
+                        let by = (spawn_y as i32 + dy) as usize;
+                        if bx < self.width
+                            && by < self.height
+                            && self.tiles[bx][by] == Tile::Floor
+                            && !self.deco_objects.contains_key(&(bx, by))
+                            && rng.random_bool(0.25)
+                        {
+                            self.features.insert((bx, by), DungeonFeature::Bloodstain);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Generate a cellular automata blob for lake/chasm placement
+    /// Returns a 2D grid of booleans where true = liquid/chasm
+    fn generate_ca_blob(
+        &self,
+        width: usize,
+        height: usize,
+        initial_density: f64,
+        iterations: usize,
+    ) -> Vec<Vec<bool>> {
+        let mut rng = rand::rng();
+        let mut grid = vec![vec![false; height]; width];
+
+        // Initialize with random fill
+        for x in 0..width {
+            for y in 0..height {
+                grid[x][y] = rng.random_bool(initial_density);
+            }
+        }
+
+        // Run CA iterations
+        for _ in 0..iterations {
+            let mut new_grid = vec![vec![false; height]; width];
+            for x in 0..width {
+                for y in 0..height {
+                    let mut neighbors = 0;
+                    for dx in -1i32..=1 {
+                        for dy in -1i32..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let nx = x as i32 + dx;
+                            let ny = y as i32 + dy;
+                            if nx >= 0 && nx < width as i32 && ny >= 0 && ny < height as i32 {
+                                if grid[nx as usize][ny as usize] {
+                                    neighbors += 1;
+                                }
+                            } else {
+                                // Treat out of bounds as filled (helps create rounded edges)
+                                neighbors += 1;
+                            }
+                        }
+                    }
+                    // 5-neighbor rule: cell is alive if it has 5+ neighbors or was alive with 4+
+                    new_grid[x][y] = neighbors >= 5 || (grid[x][y] && neighbors >= 4);
+                }
+            }
+            grid = new_grid;
+        }
+
+        grid
+    }
+
+    /// Flood fill to count connected floor tiles from a starting position
+    fn flood_fill_count(
+        &self,
+        start_x: usize,
+        start_y: usize,
+        excluded: &HashSet<(usize, usize)>,
+    ) -> usize {
+        let mut visited = HashSet::new();
+        let mut stack = vec![(start_x, start_y)];
+        let mut count = 0;
+
+        while let Some((x, y)) = stack.pop() {
+            if visited.contains(&(x, y)) {
+                continue;
+            }
+            if excluded.contains(&(x, y)) {
+                continue;
+            }
+            if x >= self.width || y >= self.height {
+                continue;
+            }
+            if self.tiles[x][y] != Tile::Floor {
+                continue;
+            }
+
+            visited.insert((x, y));
+            count += 1;
+
+            if x > 0 {
+                stack.push((x - 1, y));
+            }
+            if x < self.width - 1 {
+                stack.push((x + 1, y));
+            }
+            if y > 0 {
+                stack.push((x, y - 1));
+            }
+            if y < self.height - 1 {
+                stack.push((x, y + 1));
+            }
+        }
+
+        count
+    }
+
+    /// Check if placing a lake at the given position would disconnect the dungeon
+    fn would_disconnect(&self, lake_tiles: &HashSet<(usize, usize)>) -> bool {
+        // Find a floor tile not in the lake to start flood fill
+        let mut start = None;
+        for x in 1..self.width - 1 {
+            for y in 1..self.height - 1 {
+                if self.tiles[x][y] == Tile::Floor && !lake_tiles.contains(&(x, y)) {
+                    start = Some((x, y));
+                    break;
+                }
+            }
+            if start.is_some() {
+                break;
+            }
+        }
+
+        let Some((sx, sy)) = start else {
+            return true;
+        };
+
+        // Count all floor tiles
+        let total_floor: usize = (1..self.width - 1)
+            .flat_map(|x| (1..self.height - 1).map(move |y| (x, y)))
+            .filter(|&(x, y)| self.tiles[x][y] == Tile::Floor && !lake_tiles.contains(&(x, y)))
+            .count();
+
+        // Count reachable floor tiles
+        let reachable = self.flood_fill_count(sx, sy, lake_tiles);
+
+        // If not all floor tiles are reachable, the lake would disconnect
+        reachable < total_floor
+    }
+
+    /// Place a lake (water, lava, or chasm) using cellular automata
+    /// floor 4-6: water lakes
+    /// floor 7+: lava lakes or chasms
+    pub fn place_lakes(&mut self, floor: i32) {
+        let mut rng = rand::rng();
+
+        // Determine lake type based on floor
+        let lake_type = if floor >= 7 {
+            if rng.random_bool(0.5) {
+                Tile::Lava
+            } else {
+                Tile::Chasm
+            }
+        } else if floor >= 4 {
+            Tile::DeepWater
+        } else {
+            return; // No lakes on floors 1-3
+        };
+
+        // Number of lakes to attempt (1-2)
+        let num_lakes = if rng.random_bool(0.3) { 2 } else { 1 };
+
+        for _ in 0..num_lakes {
+            // Generate a CA blob (size varies)
+            let blob_width = rng.random_range(8..16);
+            let blob_height = rng.random_range(8..16);
+            let blob = self.generate_ca_blob(blob_width, blob_height, 0.42, 5);
+
+            // Try multiple positions to place the lake
+            let mut best_placement: Option<(usize, usize, HashSet<(usize, usize)>)> = None;
+
+            for _ in 0..30 {
+                // Pick a random room to place the lake in
+                if self.rooms.is_empty() {
+                    break;
+                }
+                let room_idx = rng.random_range(0..self.rooms.len());
+                let room = &self.rooms[room_idx];
+
+                // Skip small rooms
+                let room_width = room.x2 - room.x1;
+                let room_height = room.y2 - room.y1;
+                if room_width < 6 || room_height < 6 {
+                    continue;
+                }
+
+                // Calculate offset to center blob in room
+                let offset_x = room.x1 + (room_width.saturating_sub(blob_width)) / 2;
+                let offset_y = room.y1 + (room_height.saturating_sub(blob_height)) / 2;
+
+                // Convert blob to map coordinates
+                let mut lake_tiles = HashSet::new();
+                for bx in 0..blob_width {
+                    for by in 0..blob_height {
+                        if !blob[bx][by] {
+                            continue;
+                        }
+                        let mx = offset_x + bx;
+                        let my = offset_y + by;
+
+                        // Only place on floor tiles, not near edges
+                        if mx < 2 || mx >= self.width - 2 {
+                            continue;
+                        }
+                        if my < 2 || my >= self.height - 2 {
+                            continue;
+                        }
+                        if self.tiles[mx][my] != Tile::Floor {
+                            continue;
+                        }
+
+                        // Don't place on doors, stairs, or special tiles
+                        if self.deco_objects.contains_key(&(mx, my)) {
+                            continue;
+                        }
+                        if self.trap_tiles.contains_key(&(mx, my)) {
+                            continue;
+                        }
+
+                        lake_tiles.insert((mx, my));
+                    }
+                }
+
+                // Need at least 6 tiles for a meaningful lake
+                if lake_tiles.len() < 6 {
+                    continue;
+                }
+
+                // Check connectivity
+                if !self.would_disconnect(&lake_tiles) {
+                    best_placement = Some((offset_x, offset_y, lake_tiles));
+                    break;
+                }
+            }
+
+            // Apply the lake
+            if let Some((_, _, lake_tiles)) = best_placement {
+                // First pass: place the deep tiles
+                for &(x, y) in &lake_tiles {
+                    self.tiles[x][y] = lake_type;
+                }
+
+                // Second pass: add wreaths (shallow water or chasm edges)
+                let wreath_type = match lake_type {
+                    Tile::DeepWater => Tile::ShallowWater,
+                    Tile::Lava => Tile::ShallowWater, // Cooling lava at edges
+                    Tile::Chasm => Tile::ChasmEdge,
+                    _ => continue,
+                };
+
+                for &(x, y) in &lake_tiles {
+                    for dx in -1i32..=1 {
+                        for dy in -1i32..=1 {
+                            if dx == 0 && dy == 0 {
+                                continue;
+                            }
+                            let nx = (x as i32 + dx) as usize;
+                            let ny = (y as i32 + dy) as usize;
+                            if nx < self.width && ny < self.height {
+                                if self.tiles[nx][ny] == Tile::Floor {
+                                    self.tiles[nx][ny] = wreath_type;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn stamp_vaults(&mut self, floor: i32) {
+        if floor < 2 {
+            return;
+        }
+
+        let mut rng = rand::rng();
+        let num_vaults = if floor >= 5 { 2 } else { 1 };
+        let mut stamped_rooms: HashSet<usize> = HashSet::new();
+
+        for _ in 0..num_vaults {
+            let suitable_templates: Vec<&VaultTemplate> = VAULT_TEMPLATES
+                .iter()
+                .filter(|v| match v.vault_type {
+                    VaultType::ThroneRoom => floor >= 5,
+                    VaultType::Armory => true,
+                    VaultType::Prison => floor >= 3,
+                    VaultType::RitualChamber => floor >= 4,
+                    VaultType::TreasureVault => floor >= 3,
+                    VaultType::Library => floor >= 2,
+                })
+                .collect();
+
+            if suitable_templates.is_empty() {
+                continue;
+            }
+
+            for room_idx in 0..self.rooms.len() {
+                if stamped_rooms.contains(&room_idx) {
+                    continue;
+                }
+                if self.room_types.get(room_idx) == Some(&RoomType::Spawn) {
+                    continue;
+                }
+                if self.room_types.get(room_idx) == Some(&RoomType::Boss) {
+                    continue;
+                }
+
+                let room = &self.rooms[room_idx];
+                let room_width = room.x2 - room.x1;
+                let room_height = room.y2 - room.y1;
+
+                let fitting_templates: Vec<&&VaultTemplate> = suitable_templates
+                    .iter()
+                    .filter(|v| v.min_width <= room_width && v.min_height <= room_height)
+                    .collect();
+
+                if fitting_templates.is_empty() {
+                    continue;
+                }
+                if !rng.random_bool(0.4) {
+                    continue;
+                }
+
+                let template = fitting_templates[rng.random_range(0..fitting_templates.len())];
+
+                let offset_x = room.x1 + (room_width - template.min_width) / 2;
+                let offset_y = room.y1 + (room_height - template.min_height) / 2;
+
+                for (py, row) in template.pattern.iter().enumerate() {
+                    for (px, ch) in row.chars().enumerate() {
+                        let mx = offset_x + px;
+                        let my = offset_y + py;
+
+                        if mx >= self.width || my >= self.height {
+                            continue;
+                        }
+
+                        match ch {
+                            '#' => {
+                                if self.tiles[mx][my] == Tile::Floor {
+                                    self.tiles[mx][my] = Tile::Wall;
+                                }
+                            }
+                            '.' => {
+                                if self.tiles[mx][my] == Tile::Wall {
+                                    self.tiles[mx][my] = Tile::Floor;
+                                }
+                            }
+                            'P' => {
+                                self.tiles[mx][my] = Tile::Floor;
+                                self.deco_objects.insert((mx, my), DecoObject::Pillar);
+                            }
+                            'T' => {
+                                self.tiles[mx][my] = Tile::Floor;
+                                self.deco_objects.insert((mx, my), DecoObject::Torch);
+                            }
+                            'A' => {
+                                self.tiles[mx][my] = Tile::Floor;
+                                self.deco_objects.insert((mx, my), DecoObject::Altar);
+                            }
+                            'C' => {
+                                self.tiles[mx][my] = Tile::Floor;
+                                self.deco_objects.insert((mx, my), DecoObject::Chest);
+                            }
+                            '*' => {
+                                self.tiles[mx][my] = Tile::Floor;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+
+                stamped_rooms.insert(room_idx);
+                break;
+            }
+        }
+    }
+
+    pub fn place_machines(&mut self, floor: i32) {
+        if floor < 3 {
+            return;
+        }
+
+        let mut rng = rand::rng();
+
+        let shrine_rooms: Vec<usize> = self
+            .room_types
+            .iter()
+            .enumerate()
+            .filter(|(_, rt)| **rt == RoomType::Shrine)
+            .map(|(i, _)| i)
+            .collect();
+
+        for shrine_room_idx in shrine_rooms {
+            if !rng.random_bool(0.5) {
+                continue;
+            }
+
+            let trigger_room = &self.rooms[shrine_room_idx];
+            let trigger_pos = trigger_room.center();
+
+            let trap_room_idx = (0..self.rooms.len())
+                .filter(|&i| i != shrine_room_idx)
+                .filter(|&i| self.room_types.get(i) != Some(&RoomType::Spawn))
+                .filter(|&i| self.room_types.get(i) != Some(&RoomType::Boss))
+                .max_by_key(|&i| {
+                    let r = &self.rooms[i];
+                    let c = r.center();
+                    let dx = c.0 as i32 - trigger_pos.0 as i32;
+                    let dy = c.1 as i32 - trigger_pos.1 as i32;
+                    dx * dx + dy * dy
+                });
+
+            if let Some(trap_idx) = trap_room_idx {
+                let trap_room = &self.rooms[trap_idx];
+                let effect_pos = trap_room.center();
+
+                self.machines.push(Machine {
+                    machine_type: MachineType::ShrineTrap,
+                    trigger_pos,
+                    effect_pos,
+                    activated: false,
+                });
+            }
+        }
+
+        if floor >= 5 {
+            let boss_rooms: Vec<usize> = self
+                .room_types
+                .iter()
+                .enumerate()
+                .filter(|(_, rt)| **rt == RoomType::Boss)
+                .map(|(i, _)| i)
+                .collect();
+
+            for boss_room_idx in boss_rooms {
+                let room = &self.rooms[boss_room_idx];
+                let room_width = room.x2 - room.x1;
+                let room_height = room.y2 - room.y1;
+
+                if room_width >= 8 && room_height >= 8 {
+                    let hazard_positions = [
+                        (room.x1 + 2, room.y1 + 2),
+                        (room.x2 - 3, room.y1 + 2),
+                        (room.x1 + 2, room.y2 - 3),
+                        (room.x2 - 3, room.y2 - 3),
+                    ];
+
+                    for &(hx, hy) in &hazard_positions {
+                        if hx < self.width
+                            && hy < self.height
+                            && self.tiles[hx][hy] == Tile::Floor
+                            && rng.random_bool(0.4)
+                        {
+                            self.tiles[hx][hy] = if floor >= 7 {
+                                Tile::Lava
+                            } else {
+                                Tile::DeepWater
+                            };
+
+                            for dx in -1i32..=1 {
+                                for dy in -1i32..=1 {
+                                    if dx == 0 && dy == 0 {
+                                        continue;
+                                    }
+                                    let nx = (hx as i32 + dx) as usize;
+                                    let ny = (hy as i32 + dy) as usize;
+                                    if nx < self.width
+                                        && ny < self.height
+                                        && self.tiles[nx][ny] == Tile::Floor
+                                    {
+                                        self.tiles[nx][ny] = if floor >= 7 {
+                                            Tile::ShallowWater
+                                        } else {
+                                            Tile::ShallowWater
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    self.machines.push(Machine {
+                        machine_type: MachineType::BossHazard,
+                        trigger_pos: room.center(),
+                        effect_pos: room.center(),
+                        activated: true,
+                    });
+                }
+            }
+        }
+    }
+
+    pub fn activate_machine(
+        &mut self,
+        trigger_pos: (usize, usize),
+    ) -> Option<(MachineType, (usize, usize))> {
+        for machine in &mut self.machines {
+            if machine.trigger_pos == trigger_pos && !machine.activated {
+                machine.activated = true;
+
+                if machine.machine_type == MachineType::ShrineTrap {
+                    let (ex, ey) = machine.effect_pos;
+                    if ex < self.width && ey < self.height {
+                        self.trap_tiles.insert((ex, ey), TrapType::Fire);
+                        for dx in -1i32..=1 {
+                            for dy in -1i32..=1 {
+                                let nx = (ex as i32 + dx) as usize;
+                                let ny = (ey as i32 + dy) as usize;
+                                if nx < self.width
+                                    && ny < self.height
+                                    && self.tiles[nx][ny] == Tile::Floor
+                                {
+                                    if rand::rng().random_bool(0.3) {
+                                        self.trap_tiles.insert((nx, ny), TrapType::Fire);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return Some((machine.machine_type, machine.effect_pos));
+            }
+        }
+        None
     }
 }
