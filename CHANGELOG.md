@@ -1,5 +1,25 @@
 # Ironveil Development Changelog
 
+## v0.6.1 — BSP Dungeon Fixes & Quality Improvements
+*2026-04-04*
+
+### BSP Dungeon Generator Fixes
+- Fixed index out-of-bounds panic: BSP split code was passing absolute coordinates to `Rect::new(x, y, w, h)` which doubled values — switched to struct literal `Rect { x1, y1, x2, y2 }`
+- Restored missing stairs placement: `Tile::Stairs` now placed at center of last room (was accidentally removed in BSP commit)
+- Added stairs placement to cave generator (floors 4-6)
+
+### Dungeon Quality Improvements
+- Room sizes now scale to terminal dimensions via `term_ratio` — rooms range from 6-18 on small terminals up to proportionally larger on fullscreen
+- Added loop connections: 20% chance of extra corridors between nearby non-adjacent rooms, creating alternative paths instead of linear chains
+- Boss floor arenas: floors 5, 10, 15+ now generate a large open arena (18-24 × 12-16) at the end, connected via corridor with stairs at center
+- Fog of war reveal: progressive ring animation plays on floor entry, then full map reveal completes (fog disabled)
+
+### Codebase
+- `generate_bsp()` now accepts `floor` parameter for boss floor detection
+- Removed unused `apply_horizontal_tunnel` and `apply_vertical_tunnel` legacy functions (replaced by `connect_rooms`)
+
+---
+
 ## v0.6.0 — Affixes, Exotics & Loot Overhaul
 *2026-04-03*
 

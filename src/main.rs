@@ -1625,6 +1625,10 @@ fn main() -> std::io::Result<()> {
                 frame_count += 1;
             }
 
+            map.reveal_all();
+            render_map(&mut stdout, &map, current_floor)?;
+            stdout.flush()?;
+
             log.push(format!("Welcome to floor {}!", current_floor));
 
             match current_floor {

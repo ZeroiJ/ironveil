@@ -99,10 +99,10 @@ impl Map {
                 rooms = Map::generate_cave(&mut tiles, width, height, &mut rng);
             }
             "bsp_deep" => {
-                rooms = Map::generate_bsp(&mut tiles, width, height, 6, &mut rng);
+                rooms = Map::generate_bsp(&mut tiles, width, height, 6, &mut rng, floor);
             }
             _ => {
-                rooms = Map::generate_bsp(&mut tiles, width, height, 4, &mut rng);
+                rooms = Map::generate_bsp(&mut tiles, width, height, 4, &mut rng, floor);
             }
         }
 
@@ -128,6 +128,7 @@ impl Map {
         height: usize,
         split_depth: i32,
         rng: &mut impl RngExt,
+        floor: i32,
     ) -> Vec<Rect> {
         let mut rooms = Vec::new();
         let padding = 2;
@@ -161,8 +162,18 @@ impl Map {
                             return vec![*r];
                         }
                         vec![
-                            Rect::new(r.x1, r.y1, r.x2, split),
-                            Rect::new(r.x1, split, r.x2, r.y2),
+                            Rect {
+                                x1: r.x1,
+                                y1: r.y1,
+                                x2: r.x2,
+                                y2: split,
+                            },
+                            Rect {
+                                x1: r.x1,
+                                y1: split,
+                                x2: r.x2,
+                                y2: r.y2,
+                            },
                         ]
                     } else {
                         let split = rng.random_range(r.x1 + 5..r.x2.saturating_sub(5));
@@ -170,8 +181,18 @@ impl Map {
                             return vec![*r];
                         }
                         vec![
-                            Rect::new(r.x1, r.y1, split, r.y2),
-                            Rect::new(split, r.y1, r.x2, r.y2),
+                            Rect {
+                                x1: r.x1,
+                                y1: r.y1,
+                                x2: split,
+                                y2: r.y2,
+                            },
+                            Rect {
+                                x1: split,
+                                y1: r.y1,
+                                x2: r.x2,
+                                y2: r.y2,
+                            },
                         ]
                     }
                 })
@@ -179,10 +200,11 @@ impl Map {
             rects = new_rects;
         }
 
-        let min_room_w = 5;
-        let min_room_h = 4;
-        let max_room_w = 14;
-        let max_room_h = 12;
+        let term_ratio = width as f32 / 120.0;
+        let min_room_w = (6.0 * term_ratio).max(6.0) as usize;
+        let min_room_h = (5.0 * term_ratio).max(5.0) as usize;
+        let max_room_w = (18.0 * term_ratio).max(10.0) as usize;
+        let max_room_h = (14.0 * term_ratio).max(8.0) as usize;
 
         for rect in &rects {
             let rw = rect.x2.saturating_sub(rect.x1);
@@ -206,6 +228,57 @@ impl Map {
                 let (x1, y1) = rooms[i].center();
                 let (x2, y2) = rooms[i + 1].center();
                 Map::connect_rooms(tiles, x1, y1, x2, y2, rng);
+            }
+        }
+
+        if rooms.len() > 3 {
+            for i in 0..rooms.len() {
+                for j in (i + 2)..rooms.len() {
+                    if j == i + 1 {
+                        continue;
+                    }
+                    let d = Map::distance(rooms[i].x1, rooms[i].y1, rooms[j].x1, rooms[j].y1);
+                    if d < 30 && rng.random_bool(0.2) {
+                        let (x1, y1) = rooms[i].center();
+                        let (x2, y2) = rooms[j].center();
+                        Map::connect_rooms(tiles, x1, y1, x2, y2, rng);
+                    }
+                }
+            }
+        }
+
+        let is_boss_floor = floor == 5 || floor == 10 || (floor >= 15 && floor % 5 == 0);
+
+        if is_boss_floor && rooms.len() > 2 {
+            let arena_w = (20.0 * term_ratio).clamp(18.0, 24.0) as usize;
+            let arena_h = (14.0 * term_ratio).clamp(12.0, 16.0) as usize;
+            let prev_room = rooms.last().unwrap();
+            let (px, py) = prev_room.center();
+
+            let arena_x = (px as i32
+                + rng.random_range(8..15) as i32 * if rng.random_bool(0.5) { 1 } else { -1 })
+            .clamp(2, (width - arena_w - 2) as i32) as usize;
+            let arena_y = (py as i32
+                + rng.random_range(6..12) as i32 * if rng.random_bool(0.5) { 1 } else { -1 })
+            .clamp(2, (height - arena_h - 2) as i32) as usize;
+
+            let boss_room = Rect::new(arena_x, arena_y, arena_w, arena_h);
+            Map::apply_room_to_map(tiles, &boss_room);
+
+            let (px, py) = prev_room.center();
+            let (bx, by) = boss_room.center();
+            Map::connect_rooms(tiles, px, py, bx, by, rng);
+
+            let (sx, sy) = boss_room.center();
+            if sx < width && sy < height {
+                tiles[sx][sy] = Tile::Stairs;
+            }
+
+            rooms.push(boss_room);
+        } else if let Some(last_room) = rooms.last() {
+            let (sx, sy) = last_room.center();
+            if sx < width && sy < height {
+                tiles[sx][sy] = Tile::Stairs;
             }
         }
 
@@ -310,6 +383,13 @@ impl Map {
                 let (x1, y1) = rooms[i].center();
                 let (x2, y2) = rooms[i + 1].center();
                 Map::connect_rooms(tiles, x1, y1, x2, y2, rng);
+            }
+        }
+
+        if let Some(last_room) = rooms.last() {
+            let (sx, sy) = last_room.center();
+            if sx < width && sy < height {
+                tiles[sx][sy] = Tile::Stairs;
             }
         }
 
